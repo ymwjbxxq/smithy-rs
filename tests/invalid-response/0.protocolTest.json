@@ -1,0 +1,30 @@
+{
+  "id": "list-tables",
+  "body": "{\"ExclusiveStartTableName\": \"hello\"}",
+  "method": "POST",
+  "uri": "https://dynamodb.us-east-1.amazonaws.com/",
+  "authScheme": null,
+  "queryParams": [],
+  "forbidQueryParams": [],
+  "requireQueryParams": [],
+  "headers": {
+    "Host": "dynamodb.us-east-1.amazonaws.com",
+    "X-Amz-Target": "DynamoDB_20120810.ListTables",
+    "Content-Type": "application/x-amz-json-1.0"
+  },
+  "forbidHeaders": [],
+  "requireHeaders": [
+    "Authorization",
+    "X-Amz-Date"
+  ],
+  "params": {
+    "ExclusiveStartTableName": "hello"
+  },
+  "vendorParams": {
+    "type": "crucible",
+    "response": {
+      "TableNames": ["new_table"]
+    }
+  },
+  "documentation": "DynamoDB List tables"
+}

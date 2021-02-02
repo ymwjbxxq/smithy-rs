@@ -1,0 +1,47 @@
+{
+  "http_version": "HTTP/1.1",
+  "headers": [
+    [
+      "Host",
+      "dynamodb.us-east-1.amazonaws.com"
+    ],
+    [
+      "Accept-Encoding",
+      "identity"
+    ],
+    [
+      "X-Amz-Target",
+      "DynamoDB_20120810.ListTables"
+    ],
+    [
+      "Content-Type",
+      "application/x-amz-json-1.0"
+    ],
+    [
+      "User-Agent",
+      "aws-cli/2.1.22 Python/3.7.4 Darwin/19.6.0 exe/x86_64 prompt/on command/dynamodb.list-tables"
+    ],
+    [
+      "X-Amz-Date",
+      "20210201T220153Z"
+    ],
+    [
+      "Authorization",
+      "AWS4-HMAC-SHA256 Credential=AKIAR6OFQKMANXDBEUNH/20210201/us-east-1/dynamodb/aws4_request, SignedHeaders=content-type;host;x-amz-date;x-amz-target, Signature=f020983aed8b8b562d6c3e6d229fa4a51e828d965dc47d865325163ad18ddc93"
+    ],
+    [
+      "Content-Length",
+      "36"
+    ]
+  ],
+  "content": "{\"ExclusiveStartTableName\": \"hello\"}",
+  "trailers": null,
+  "timestamp_start": 1612216913.552295,
+  "timestamp_end": 1612216913.556324,
+  "host": "dynamodb.us-east-1.amazonaws.com",
+  "port": 443,
+  "method": "POST",
+  "scheme": "https",
+  "authority": "",
+  "path": "/"
+}

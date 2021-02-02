@@ -1,0 +1,39 @@
+{
+  "http_version": "HTTP/1.1",
+  "headers": [
+    [
+      "Server",
+      "Server"
+    ],
+    [
+      "Date",
+      "Mon, 01 Feb 2021 22:01:53 GMT"
+    ],
+    [
+      "Content-Type",
+      "application/x-amz-json-1.0"
+    ],
+    [
+      "Content-Length",
+      "28"
+    ],
+    [
+      "Connection",
+      "keep-alive"
+    ],
+    [
+      "x-amzn-RequestId",
+      "GJD9Q8OL6TK57M40FCFHTEV4IRVV4KQNSO5AEMVJF66Q9ASUAAJG"
+    ],
+    [
+      "x-amz-crc32",
+      "2644552172"
+    ]
+  ],
+  "content": "{\"TableNames\":[\"new_table\"]}",
+  "trailers": null,
+  "timestamp_start": 1612216913.718873,
+  "timestamp_end": 1612216913.7220879,
+  "status_code": 200,
+  "reason": "OK"
+}
