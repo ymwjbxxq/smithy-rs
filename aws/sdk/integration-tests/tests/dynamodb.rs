@@ -72,6 +72,11 @@ async fn test_list_tables() {
     let request = ListTables::builder().build(&config);
 
     start_test("list-tables");
+    // {
+    //   — id
+    //   - outputshape,
+    //   - inputshape,
+    // }
     let response = client.call(request).await.expect("success response");
     assert_eq!(response.table_names.unwrap(), vec!["new_table".to_owned()]);
     let output = finish_test();

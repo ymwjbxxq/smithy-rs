@@ -6,8 +6,10 @@
 package software.amazon.smithy.rust.codegen.smithy
 
 import software.amazon.smithy.build.PluginContext
+import software.amazon.smithy.codegen.core.writer.CodegenWriterDelegator
 import software.amazon.smithy.model.shapes.OperationShape
 import software.amazon.smithy.model.shapes.ShapeId
+import software.amazon.smithy.rust.codegen.rustlang.RustWriter
 import software.amazon.smithy.rust.codegen.smithy.generators.OperationCustomization
 import software.amazon.smithy.rust.codegen.smithy.generators.ProtocolConfig
 import software.amazon.smithy.rust.codegen.smithy.generators.config.ConfigCustomization
@@ -46,6 +48,8 @@ interface RustCodegenDecorator {
     fun protocols(serviceId: ShapeId, currentProtocols: ProtocolMap): ProtocolMap = currentProtocols
 
     fun symbolProvider(baseProvider: RustSymbolProvider): RustSymbolProvider = baseProvider
+
+    fun injectCode(protocolConfig: ProtocolConfig, writer: CodegenWriterDelegator<RustWriter>) {}
 }
 
 class CombinedCodegenDecorator(decorators: List<RustCodegenDecorator>) : RustCodegenDecorator {
@@ -80,6 +84,10 @@ class CombinedCodegenDecorator(decorators: List<RustCodegenDecorator>) : RustCod
         baseCustomizations: List<OperationCustomization>
     ): List<OperationCustomization> {
         return orderedDecorators.foldRight(baseCustomizations) { decorator, customizations -> decorator.operationCustomizations(protocolConfig, operation, customizations) }
+    }
+
+    override fun injectCode(protocolConfig: ProtocolConfig, writer: CodegenWriterDelegator<RustWriter>) {
+        orderedDecorators.forEach { it.injectCode(protocolConfig, writer) }
     }
 
     companion object {

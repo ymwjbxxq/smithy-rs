@@ -48,6 +48,10 @@ impl<H, R> Operation<H, R> {
             _retry_policy: r,
         }
     }
+
+    pub fn config_mut(&mut self) -> RefMut<'_, PropertyBag> {
+        &mut self.request.config_mut()
+    }
 }
 
 pub struct Request {

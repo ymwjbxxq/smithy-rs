@@ -31,15 +31,16 @@ import software.amazon.smithy.model.traits.EnumTrait
 import software.amazon.smithy.model.traits.IdempotencyTokenTrait
 import software.amazon.smithy.rust.codegen.rustlang.RustType
 import software.amazon.smithy.rust.codegen.rustlang.RustWriter
+import software.amazon.smithy.rust.codegen.rustlang.Writable
 import software.amazon.smithy.rust.codegen.rustlang.conditionalBlock
 import software.amazon.smithy.rust.codegen.rustlang.rust
 import software.amazon.smithy.rust.codegen.rustlang.rustBlock
 import software.amazon.smithy.rust.codegen.rustlang.withBlock
+import software.amazon.smithy.rust.codegen.rustlang.writable
 import software.amazon.smithy.rust.codegen.smithy.RuntimeConfig
 import software.amazon.smithy.rust.codegen.smithy.RuntimeType
 import software.amazon.smithy.rust.codegen.smithy.isOptional
 import software.amazon.smithy.rust.codegen.smithy.rustType
-import software.amazon.smithy.rust.codegen.smithy.traits.SyntheticInputTrait
 import software.amazon.smithy.rust.codegen.util.dq
 import software.amazon.smithy.rust.codegen.util.toPascalCase
 
@@ -53,6 +54,29 @@ class Instantiator(
     private val model: Model,
     private val runtimeConfig: RuntimeConfig
 ) {
+
+    fun renderInput(shape: StructureShape, data: ObjectNode): Pair<Writable, Writable> {
+        val config = writable {
+            rust(
+                """
+            let config = #T::Config::builder()
+        """,
+                RuntimeType.Config
+            )
+            if (shape.allMembers.values.any { it.hasTrait(IdempotencyTokenTrait::class.java) }) {
+                rust(".token_provider(\"00000000-0000-4000-8000-000000000000\")")
+            }
+            rust(".build();")
+        }
+        val instantiation = writable {
+            rustBlock("") {
+                rust("#T::builder()", symbolProvider.toSymbol(shape))
+                renderStructureBuilder(data, shape, this)
+                rust(".build(&config)")
+            }
+        }
+        return config to instantiation
+    }
 
     fun render(writer: RustWriter, shape: Shape, arg: Node) {
         when (shape) {
@@ -241,38 +265,27 @@ class Instantiator(
         data: ObjectNode
     ) {
         writer.rustBlock("") {
-            val isSyntheticInput = shape.hasTrait(SyntheticInputTrait::class.java)
-            if (isSyntheticInput) {
-                rust(
-                    """
-                let config = #T::Config::builder()
-            """,
-                    RuntimeType.Config
-                )
-                if (shape.allMembers.values.any { it.hasTrait(IdempotencyTokenTrait::class.java) }) {
-                    rust(".token_provider(\"00000000-0000-4000-8000-000000000000\")")
-                }
-                rust(".build();")
-            } else {
-                write("let _ = 5;")
-            }
             writer.write("#T::builder()", symbolProvider.toSymbol(shape))
-            data.members.forEach { (key, value) ->
-                val (memberShape, targetShape) = getMember(shape, key)
-                val func = symbolProvider.toMemberName(memberShape)
-                if (!value.isNullNode) {
-                    writer.withBlock(".$func(", ")") {
-                        render(this, targetShape, value)
-                    }
-                }
-            }
-            if (isSyntheticInput) {
-                writer.write(".build(&config)")
-            } else {
-                writer.write(".build()")
-            }
+            renderStructureBuilder(data, shape, writer)
+            writer.write(".build()")
             if (StructureGenerator.fallibleBuilder(shape, symbolProvider)) {
                 writer.write(".unwrap()")
+            }
+        }
+    }
+
+    private fun renderStructureBuilder(
+        data: ObjectNode,
+        shape: StructureShape,
+        writer: RustWriter
+    ) {
+        data.members.forEach { (key, value) ->
+            val (memberShape, targetShape) = getMember(shape, key)
+            val func = symbolProvider.toMemberName(memberShape)
+            if (!value.isNullNode) {
+                writer.withBlock(".$func(", ")") {
+                    render(this, targetShape, value)
+                }
             }
         }
     }

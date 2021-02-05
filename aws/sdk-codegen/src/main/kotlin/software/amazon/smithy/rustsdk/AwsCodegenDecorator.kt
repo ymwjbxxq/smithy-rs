@@ -6,7 +6,9 @@
 package software.amazon.smithy.rustsdk
 
 import software.amazon.smithy.aws.traits.auth.SigV4Trait
+import software.amazon.smithy.codegen.core.writer.CodegenWriterDelegator
 import software.amazon.smithy.model.shapes.OperationShape
+import software.amazon.smithy.rust.codegen.rustlang.RustWriter
 import software.amazon.smithy.rust.codegen.smithy.RustCodegenDecorator
 import software.amazon.smithy.rust.codegen.smithy.generators.OperationCustomization
 import software.amazon.smithy.rust.codegen.smithy.generators.ProtocolConfig
@@ -35,5 +37,10 @@ class AwsCodegenDecorator : RustCodegenDecorator {
         baseCustomizations: List<OperationCustomization>
     ): List<OperationCustomization> {
         return listOf(SigV4SigningPlugin(operation), EndpointConfigPlugin(operation), RegionConfigPlugin(operation)) + baseCustomizations
+    }
+
+    override fun injectCode(protocolConfig: ProtocolConfig, writer: CodegenWriterDelegator<RustWriter>) {
+        println("hello... inject")
+        IntegrationTestGenerator(protocolConfig, writer).render()
     }
 }
