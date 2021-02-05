@@ -52,7 +52,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     let config = dynamodb::Config::builder()
         .region("us-east-1")
         // To load credentials from environment variables, delete this line
-        .credentials_provider(auth::Credentials::from_static(
+        .credentials_provider(auth::Credentials::from_keys(
             "<fill me in2>",
             "<fill me in>",
         ))

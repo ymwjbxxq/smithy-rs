@@ -50,7 +50,7 @@ impl<H, R> Operation<H, R> {
     }
 
     pub fn config_mut(&mut self) -> RefMut<'_, PropertyBag> {
-        &mut self.request.config_mut()
+        self.request.config_mut()
     }
 }
 

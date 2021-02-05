@@ -204,7 +204,7 @@ class RustWriter private constructor(
         putFormatter('D', RustDocLinker())
     }
 
-    fun module(): String? = if (filename.endsWith(".rs")) {
+    fun module(): String? = if (filename.startsWith("src/") && filename.endsWith(".rs")) {
         filename.removeSuffix(".rs").split('/').last()
     } else null
 
