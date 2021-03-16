@@ -1,12 +1,11 @@
 pub mod conn;
+#[cfg(feature = "retries")]
 mod retry;
 #[cfg(feature = "test-util")]
 pub mod test_connection;
 
-pub use retry::RetryConfig;
 
 use crate::conn::Standard;
-use crate::retry::RetryHandlerFactory;
 use aws_endpoint::AwsEndpointStage;
 use aws_http::user_agent::UserAgentStage;
 use aws_sig_auth::middleware::SigV4SigningStage;
@@ -45,12 +44,14 @@ pub type StandardClient = Client<conn::Standard>;
 /// ```
 pub struct Client<S> {
     inner: S,
-    retry_handler: RetryHandlerFactory,
+    #[cfg(feature = "retries")]
+    retry_handler: crate::retry::RetryHandlerFactory,
 }
 
 impl<S> Debug for Client<S> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         let mut formatter = f.debug_struct("Client");
+        #[cfg(feature = "retries")]
         formatter.field("retry_handler", &self.retry_handler);
         formatter.finish()
     }
@@ -61,11 +62,13 @@ impl<S> Client<S> {
     pub fn new(connector: S) -> Self {
         Client {
             inner: connector,
-            retry_handler: RetryHandlerFactory::new(RetryConfig::default()),
+            #[cfg(feature = "retries")]
+            retry_handler: create::retry::RetryHandlerFactory::new(crate::retry::RetryConfig::default()),
         }
     }
 
-    pub fn with_retry_config(mut self, retry_config: RetryConfig) -> Self {
+    #[cfg(feature = "retries")]
+    pub fn with_retry_config(mut self, retry_config: crate::retry::RetryConfig) -> Self {
         self.retry_handler.with_config(retry_config);
         self
     }
@@ -73,10 +76,12 @@ impl<S> Client<S> {
 
 impl Client<Standard> {
     /// Construct an `https` based client
+    #[cfg(feature = "client-impl")]
     pub fn https() -> StandardClient {
         Client {
             inner: Standard::https(),
-            retry_handler: RetryHandlerFactory::new(RetryConfig::default()),
+            #[cfg(feature = "retries")]
+            retry_handler: crate::retry::RetryHandlerFactory::new(crate::retry::RetryConfig::default()),
         }
     }
 }
@@ -122,7 +127,6 @@ where
         let inner = self.inner.clone();
         let mut svc = ServiceBuilder::new()
             // Create a new request-scoped policy
-            .retry(self.retry_handler.new_handler())
             .layer(ParseResponseLayer::<O, Retry>::new())
             .layer(endpoint_resolver)
             .layer(signer)

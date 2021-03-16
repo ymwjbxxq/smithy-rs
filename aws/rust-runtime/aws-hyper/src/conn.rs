@@ -5,8 +5,10 @@
 
 use crate::BoxError;
 use http::Request;
+#[cfg(feature = "client-impl")]
 use hyper::client::{HttpConnector, ResponseFuture};
 use hyper::Response;
+#[cfg(feature = "client-impl")]
 use hyper_tls::HttpsConnector;
 use smithy_http::body::SdkBody;
 use std::future::{Future, Ready};
@@ -18,6 +20,7 @@ use tower::Service;
 pub struct Standard(Connector);
 
 impl Standard {
+    #[cfg(feature="client-impl")]
     /// An https connection
     pub fn https() -> Self {
         let https = HttpsConnector::new();
@@ -49,6 +52,7 @@ enum Connector {
     /// An Https Connection
     ///
     /// This is the correct connection for use cases talking to real AWS services.
+    #[cfg(feature="client-impl")]
     Https(hyper::Client<HttpsConnector<HttpConnector>, SdkBody>),
 
     /// A generic escape hatch
@@ -123,6 +127,7 @@ impl tower::Service<http::Request<SdkBody>> for Standard {
 
     fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
         match &mut self.0 {
+            #[cfg(feature="client-impl")]
             Connector::Https(https) => Service::poll_ready(https, cx).map_err(|err| err.into()),
             Connector::Dyn(conn) => conn.poll_ready(cx),
         }
@@ -130,6 +135,7 @@ impl tower::Service<http::Request<SdkBody>> for Standard {
 
     fn call(&mut self, req: http::Request<SdkBody>) -> Self::Future {
         match &mut self.0 {
+            #[cfg(feature="client-impl")]
             Connector::Https(https) => StandardFuture::Https(Service::call(https, req)),
             Connector::Dyn(conn) => StandardFuture::Dyn(conn.call(req)),
         }
@@ -139,6 +145,7 @@ impl tower::Service<http::Request<SdkBody>> for Standard {
 /// Future returned by `Standard` when used as a tower::Service
 #[pin_project::pin_project(project = FutProj)]
 pub enum StandardFuture {
+    #[cfg(feature="client-impl")]
     Https(#[pin] ResponseFuture),
     TestConn(#[pin] Ready<Result<http::Response<hyper::Body>, BoxError>>),
     Dyn(#[pin] Pin<Box<dyn Future<Output = Result<http::Response<hyper::Body>, BoxError>> + Send>>),
@@ -150,6 +157,7 @@ impl Future for StandardFuture {
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         match self.project() {
             FutProj::TestConn(ready_fut) => ready_fut.poll(cx),
+            #[cfg(feature="client-impl")]
             FutProj::Https(fut) => fut.poll(cx).map_err(|err| err.into()),
             FutProj::Dyn(dyn_fut) => dyn_fut.poll(cx),
         }
