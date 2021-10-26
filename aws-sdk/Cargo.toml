@@ -1,0 +1,4 @@
+[workspace]
+members = [
+    "config","dynamodb","ec2","glacier","iam","kms","polly","qldbsession","s3","sts","transcribestreaming","aws-smithy-async","aws-smithy-client","aws-smithy-eventstream","aws-smithy-http","aws-smithy-http-tower","aws-smithy-json","aws-smithy-protocol-test","aws-smithy-query","aws-smithy-types","aws-smithy-xml","aws-config","aws-endpoint","aws-http","aws-hyper","aws-sig-auth","aws-sigv4","aws-types","examples/s3","examples/dynamodb","examples/iam","examples/config","examples/ec2","examples/transcribestreaming","examples/kms","examples/polly"
+]
