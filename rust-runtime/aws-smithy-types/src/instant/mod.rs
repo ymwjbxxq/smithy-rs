@@ -17,6 +17,7 @@ use std::error::Error as StdError;
 use std::fmt;
 use std::str::FromStr;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use time::OffsetDateTime;
 
 mod format;
 
@@ -29,21 +30,40 @@ const NANOS_PER_MILLI: u32 = 1_000_000;
 ///
 /// Instant in time represented as seconds and sub-second nanos since
 /// the Unix epoch (January 1, 1970 at midnight UTC/GMT).
+///
+/// # Range
+/// Instants do not support unlimited range: they support dates from the year -9999 to +9999.
 #[derive(Debug, PartialEq, Clone, Copy)]
 pub struct Instant {
     seconds: i64,
     subsecond_nanos: u32,
+    datetime: OffsetDateTime,
 }
 
 /* ANCHOR_END: instant */
 
+fn offset_datetime(seconds: i64, subsecond_nanos: u32) -> Result<OffsetDateTime, DateParseError> {
+    let seconds = (seconds as i128) * 1_000_000_000;
+    let epoch_nanos = if seconds < 0 {
+        seconds
+            .checked_sub(subsecond_nanos as i128)
+            .ok_or(DateParseError::OutOfRange)?
+    } else {
+        seconds
+            .checked_add(subsecond_nanos as i128)
+            .ok_or(DateParseError::OutOfRange)?
+    };
+    OffsetDateTime::from_unix_timestamp_nanos(epoch_nanos).map_err(|_| DateParseError::OutOfRange)
+}
+
 impl Instant {
     /// Creates an `Instant` from a number of seconds since the Unix epoch.
-    pub fn from_epoch_seconds(epoch_seconds: i64) -> Self {
-        Instant {
+    pub fn from_epoch_seconds(epoch_seconds: i64) -> Result<Self, DateParseError> {
+        Ok(Instant {
             seconds: epoch_seconds,
             subsecond_nanos: 0,
-        }
+            datetime: offset_datetime(epoch_seconds, 0)?,
+        })
     }
 
     /// Creates an `Instant` from a number of seconds and a fractional second since the Unix epoch.
@@ -56,7 +76,10 @@ impl Instant {
     ///     Instant::from_fractional_seconds(1, 0.5),
     /// );
     /// ```
-    pub fn from_fractional_seconds(epoch_seconds: i64, fraction: f64) -> Self {
+    pub fn from_fractional_seconds(
+        epoch_seconds: i64,
+        fraction: f64,
+    ) -> Result<Self, DateParseError> {
         let subsecond_nanos = (fraction * 1_000_000_000_f64) as u32;
         Instant::from_secs_and_nanos(epoch_seconds, subsecond_nanos)
     }
@@ -71,14 +94,15 @@ impl Instant {
     ///     Instant::from_secs_and_nanos(1, 500_000_000u32),
     /// );
     /// ```
-    pub fn from_secs_and_nanos(seconds: i64, subsecond_nanos: u32) -> Self {
+    pub fn from_secs_and_nanos(seconds: i64, subsecond_nanos: u32) -> Result<Self, DateParseError> {
         if subsecond_nanos >= 1_000_000_000 {
             panic!("{} is > 1_000_000_000", subsecond_nanos)
         }
-        Instant {
+        Ok(Instant {
             seconds,
             subsecond_nanos,
-        }
+            datetime: offset_datetime(seconds, subsecond_nanos)?,
+        })
     }
 
     /// Creates an `Instant` from an `f64` representing the number of seconds since the Unix epoch.
@@ -91,21 +115,18 @@ impl Instant {
     ///     Instant::from_f64(1.5),
     /// );
     /// ```
-    pub fn from_f64(epoch_seconds: f64) -> Self {
+    pub fn from_f64(epoch_seconds: f64) -> Result<Self, DateParseError> {
         let seconds = epoch_seconds.floor() as i64;
         let rem = epoch_seconds - epoch_seconds.floor();
         Instant::from_fractional_seconds(seconds, rem)
     }
 
     /// Creates an `Instant` from a [`SystemTime`].
-    pub fn from_system_time(system_time: SystemTime) -> Self {
+    pub fn from_system_time(system_time: SystemTime) -> Result<Self, DateParseError> {
         let duration = system_time
             .duration_since(UNIX_EPOCH)
             .expect("SystemTime can never represent a time before the Unix Epoch");
-        Instant {
-            seconds: duration.as_secs() as i64,
-            subsecond_nanos: duration.subsec_nanos(),
-        }
+        Instant::from_secs_and_nanos(duration.as_secs() as i64, duration.subsec_nanos())
     }
 
     /// Parses an `Instant` from a string using the given `format`.
@@ -114,9 +135,9 @@ impl Instant {
             Format::DateTime => format::rfc3339::parse(s),
             Format::HttpDate => format::http_date::parse(s),
             Format::EpochSeconds => <f64>::from_str(s)
+                .map_err(|_| DateParseError::Invalid("expected float"))
                 // TODO: Parse base & fraction separately to achieve higher precision
-                .map(Self::from_f64)
-                .map_err(|_| DateParseError::Invalid("expected float")),
+                .and_then(Self::from_f64),
         }
     }
 
@@ -217,7 +238,7 @@ impl Instant {
     }
 
     /// Converts number of milliseconds since the Unix epoch into an `Instant`.
-    pub fn from_epoch_millis(epoch_millis: i64) -> Instant {
+    pub fn from_epoch_millis(epoch_millis: i64) -> Result<Instant, DateParseError> {
         let (seconds, millis) = div_mod_floor(epoch_millis, MILLIS_PER_SECOND);
         Instant::from_secs_and_nanos(seconds, millis as u32 * NANOS_PER_MILLI)
     }
@@ -255,7 +276,7 @@ impl fmt::Display for ConversionError {
 #[cfg(feature = "chrono-conversions")]
 impl From<DateTime<Utc>> for Instant {
     fn from(value: DateTime<Utc>) -> Instant {
-        Instant::from_secs_and_nanos(value.timestamp(), value.timestamp_subsec_nanos())
+        Instant::from_secs_and_nanos(value.timestamp(), value.timestamp_subsec_nanos()).unwrap()
     }
 }
 
@@ -284,7 +305,7 @@ mod test {
 
     #[test]
     fn test_instant_fmt() {
-        let instant = Instant::from_epoch_seconds(1576540098);
+        let instant = Instant::from_epoch_seconds(1576540098).expect("in range");
         assert_eq!(instant.fmt(Format::DateTime), "2019-12-16T23:48:18Z");
         assert_eq!(instant.fmt(Format::EpochSeconds), "1576540098");
         assert_eq!(
@@ -292,7 +313,7 @@ mod test {
             "Mon, 16 Dec 2019 23:48:18 GMT"
         );
 
-        let instant = Instant::from_fractional_seconds(1576540098, 0.52);
+        let instant = Instant::from_fractional_seconds(1576540098, 0.52).expect("in range");
         assert_eq!(instant.fmt(Format::DateTime), "2019-12-16T23:48:18.52Z");
         assert_eq!(instant.fmt(Format::EpochSeconds), "1576540098.52");
         assert_eq!(
@@ -303,7 +324,7 @@ mod test {
 
     #[test]
     fn test_instant_fmt_zero_seconds() {
-        let instant = Instant::from_epoch_seconds(1576540080);
+        let instant = Instant::from_epoch_seconds(1576540080).expect("in range");
         assert_eq!(instant.fmt(Format::DateTime), "2019-12-16T23:48:00Z");
         assert_eq!(instant.fmt(Format::EpochSeconds), "1576540080");
         assert_eq!(
@@ -344,7 +365,7 @@ mod test {
     #[cfg(feature = "chrono-conversions")]
     fn chrono_conversions_round_trip() {
         for (seconds, nanos) in &[(1234, 56789), (-1234, 4321)] {
-            let instant = Instant::from_secs_and_nanos(*seconds, *nanos);
+            let instant = Instant::from_secs_and_nanos(*seconds, *nanos).expect("in range");
             let chrono = instant.to_chrono();
             let instant_again: Instant = chrono.into();
             assert_eq!(instant, instant_again);
@@ -379,18 +400,6 @@ mod test {
             epoch_seconds: -1627680005,
             epoch_subsec_nanos: 877000000,
         },
-        EpochMillisTestCase {
-            rfc3339: "+292278994-08-17T07:12:55.807Z",
-            epoch_millis: i64::MAX,
-            epoch_seconds: 9223372036854775,
-            epoch_subsec_nanos: 807000000,
-        },
-        EpochMillisTestCase {
-            rfc3339: "-292275055-05-16T16:47:04.192Z",
-            epoch_millis: i64::MIN,
-            epoch_seconds: -9223372036854776,
-            epoch_subsec_nanos: 192000000,
-        },
     ];
 
     #[test]
@@ -398,7 +407,8 @@ mod test {
         for test_case in EPOCH_MILLIS_TEST_CASES {
             println!("Test case: {:?}", test_case);
             let instant =
-                Instant::from_secs_and_nanos(test_case.epoch_seconds, test_case.epoch_subsec_nanos);
+                Instant::from_secs_and_nanos(test_case.epoch_seconds, test_case.epoch_subsec_nanos)
+                    .unwrap();
             assert_eq!(test_case.epoch_seconds, instant.epoch_seconds());
             assert_eq!(
                 test_case.epoch_subsec_nanos,
@@ -407,16 +417,14 @@ mod test {
             assert_eq!(test_case.epoch_millis, instant.to_epoch_millis().unwrap());
         }
 
-        assert!(Instant::from_secs_and_nanos(i64::MAX, 0)
-            .to_epoch_millis()
-            .is_err());
+        assert!(Instant::from_secs_and_nanos(i64::MAX, 0).is_err())
     }
 
     #[test]
     fn from_epoch_millis() {
         for test_case in EPOCH_MILLIS_TEST_CASES {
             println!("Test case: {:?}", test_case);
-            let instant = Instant::from_epoch_millis(test_case.epoch_millis);
+            let instant = Instant::from_epoch_millis(test_case.epoch_millis).unwrap();
             assert_eq!(test_case.epoch_seconds, instant.epoch_seconds());
             assert_eq!(
                 test_case.epoch_subsec_nanos,
@@ -427,10 +435,11 @@ mod test {
 
     #[test]
     fn to_from_epoch_millis_round_trip() {
-        for millis in &[0, 1627680004123, -1627680004123, i64::MAX, i64::MIN] {
+        for millis in &[0, 1627680004123, -1627680004123] {
             assert_eq!(
                 *millis,
                 Instant::from_epoch_millis(*millis)
+                    .unwrap()
                     .to_epoch_millis()
                     .unwrap()
             );

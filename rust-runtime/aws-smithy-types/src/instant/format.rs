@@ -13,6 +13,7 @@ const NANOS_PER_SECOND: u32 = 1_000_000_000;
 pub enum DateParseError {
     Invalid(&'static str),
     IntParseError,
+    OutOfRange,
 }
 
 impl Error for DateParseError {}
@@ -23,6 +24,7 @@ impl fmt::Display for DateParseError {
         match self {
             Invalid(msg) => write!(f, "invalid date: {}", msg),
             IntParseError => write!(f, "failed to parse int"),
+            OutOfRange => write!(f, "date out of range"),
         }
     }
 }
@@ -234,10 +236,7 @@ pub(crate) mod http_date {
         let date = NaiveDate::from_ymd(year, month, day);
         let datetime = NaiveDateTime::new(date, time);
 
-        Ok(Instant::from_secs_and_nanos(
-            datetime.timestamp(),
-            datetime.timestamp_subsec_nanos(),
-        ))
+        Instant::from_secs_and_nanos(datetime.timestamp(), datetime.timestamp_subsec_nanos())
     }
 
     fn parse_slice<T>(ascii_slice: &[u8]) -> Result<T, DateParseError>
@@ -263,7 +262,7 @@ mod test_http_date {
     fn http_date_format() {
         let basic_http_date = "Mon, 16 Dec 2019 23:48:18 GMT";
         let ts = 1576540098;
-        let instant = Instant::from_epoch_seconds(ts);
+        let instant = Instant::from_epoch_seconds(ts).unwrap();
         assert_eq!(http_date::format(&instant), basic_http_date);
         assert_eq!(http_date::parse(basic_http_date), Ok(instant));
     }
@@ -271,7 +270,7 @@ mod test_http_date {
     #[test]
     fn http_date_pre_epoch() {
         let pre_epoch = "Sat, 27 Jan 1962 20:40:12.120 GMT";
-        let instant = Instant::from_secs_and_nanos(-250139988, 120_000_000);
+        let instant = Instant::from_secs_and_nanos(-250139988, 120_000_000).unwrap();
         assert_eq!(http_date::parse(pre_epoch), Ok(instant));
         assert_eq!(http_date::format(&instant), pre_epoch);
     }
@@ -281,7 +280,7 @@ mod test_http_date {
         let basic_http_date = "Mon, 16 Dec 2019 23:48:18 GMT";
         let fractional = "Mon, 16 Dec 2019 23:48:18.000 GMT";
         let ts = 1576540098;
-        let instant = Instant::from_epoch_seconds(ts);
+        let instant = Instant::from_epoch_seconds(ts).unwrap();
         assert_eq!(http_date::format(&instant), basic_http_date);
         assert_eq!(http_date::parse(fractional), Ok(instant));
     }
@@ -291,7 +290,7 @@ mod test_http_date {
         let fractional = "Mon, 16 Dec 2019 23:48:18.12 GMT";
         let fractional_normalized = "Mon, 16 Dec 2019 23:48:18.120 GMT";
         let ts = 1576540098;
-        let instant = Instant::from_fractional_seconds(ts, 0.12);
+        let instant = Instant::from_fractional_seconds(ts, 0.12).unwrap();
         assert_eq!(http_date::parse(fractional), Ok(instant));
         assert_eq!(http_date::format(&instant), fractional_normalized);
     }
@@ -301,7 +300,7 @@ mod test_http_date {
         let fractional = "Mon, 16 Dec 2019 23:48:18.123 GMT";
         let fractional_normalized = "Mon, 16 Dec 2019 23:48:18.123 GMT";
         let ts = 1576540098;
-        let instant = Instant::from_fractional_seconds(ts, 0.123);
+        let instant = Instant::from_fractional_seconds(ts, 0.123).unwrap();
         assert_eq!(http_date::parse(fractional), Ok(instant));
         assert_eq!(http_date::format(&instant), fractional_normalized);
     }
@@ -328,7 +327,7 @@ mod test_http_date {
     fn read_date() {
         let fractional = "Mon, 16 Dec 2019 23:48:18.123 GMT,some more stuff";
         let ts = 1576540098;
-        let expected = Instant::from_fractional_seconds(ts, 0.123);
+        let expected = Instant::from_fractional_seconds(ts, 0.123).unwrap();
         let (actual, rest) = http_date::read(fractional).expect("valid");
         assert_eq!(rest, ",some more stuff");
         assert_eq!(expected, actual);
@@ -337,7 +336,7 @@ mod test_http_date {
 
     #[track_caller]
     fn check_roundtrip(epoch_secs: i64, subsecond_nanos: u32) {
-        let instant = Instant::from_secs_and_nanos(epoch_secs, subsecond_nanos);
+        let instant = Instant::from_secs_and_nanos(epoch_secs, subsecond_nanos).unwrap();
         let formatted = http_date::format(&instant);
         let parsed = http_date::parse(&formatted);
         let read = http_date::read(&formatted);
@@ -367,14 +366,14 @@ mod test_http_date {
     #[test]
     fn valid_iso_date() {
         let date = "1985-04-12T23:20:50.52Z";
-        let expected = Instant::from_secs_and_nanos(482196050, 520000000);
+        let expected = Instant::from_secs_and_nanos(482196050, 520000000).unwrap();
         assert_eq!(rfc3339::parse(date), Ok(expected));
     }
 
     #[test]
     fn iso_date_no_fractional() {
         let date = "1985-04-12T23:20:50Z";
-        let expected = Instant::from_secs_and_nanos(482196050, 0);
+        let expected = Instant::from_secs_and_nanos(482196050, 0).unwrap();
         assert_eq!(rfc3339::parse(date), Ok(expected));
     }
 
@@ -385,9 +384,9 @@ mod test_http_date {
         let (e2, date2) = rfc3339::read(&date[1..]).expect("should succeed");
         assert_eq!(date2, "");
         assert_eq!(date, ",1985-04-12T23:20:51Z");
-        let expected = Instant::from_secs_and_nanos(482196050, 0);
+        let expected = Instant::from_secs_and_nanos(482196050, 0).unwrap();
         assert_eq!(e1, expected);
-        let expected = Instant::from_secs_and_nanos(482196051, 0);
+        let expected = Instant::from_secs_and_nanos(482196051, 0).unwrap();
         assert_eq!(e2, expected);
     }
 
@@ -422,10 +421,7 @@ pub(crate) mod rfc3339 {
         let utc_date = date
             .to_naive_datetime_with_offset(0)
             .map_err(|_| DateParseError::Invalid("invalid date"))?;
-        Ok(Instant::from_secs_and_nanos(
-            utc_date.timestamp(),
-            utc_date.timestamp_subsec_nanos(),
-        ))
+        Instant::from_secs_and_nanos(utc_date.timestamp(), utc_date.timestamp_subsec_nanos())
     }
 
     /// Read 1 RFC-3339 date from &str and return the remaining str
@@ -499,15 +495,15 @@ mod test {
     fn no_fraction() {
         assert_eq!(
             "1970-01-01T00:00:00Z",
-            format(&Instant::from_epoch_seconds(0))
+            format(&Instant::from_epoch_seconds(0).unwrap())
         );
         assert_eq!(
             "2021-06-09T23:17:26Z",
-            format(&Instant::from_epoch_seconds(1623280646))
+            format(&Instant::from_epoch_seconds(1623280646).unwrap())
         );
         assert_eq!(
             "1969-12-31T18:22:50Z",
-            format(&Instant::from_epoch_seconds(-20230))
+            format(&Instant::from_epoch_seconds(-20230).unwrap())
         );
     }
 
@@ -515,39 +511,39 @@ mod test {
     fn with_fraction() {
         assert_eq!(
             "1970-01-01T00:00:00.987Z",
-            format(&Instant::from_secs_and_nanos(0, 987_000_000))
+            format(&Instant::from_secs_and_nanos(0, 987_000_000).unwrap())
         );
         assert_eq!(
             "1970-01-01T00:00:00.1Z",
-            format(&Instant::from_secs_and_nanos(0, 100_000_000))
+            format(&Instant::from_secs_and_nanos(0, 100_000_000).unwrap())
         );
         assert_eq!(
             "1970-01-01T00:00:00.01Z",
-            format(&Instant::from_secs_and_nanos(0, 10_000_000))
+            format(&Instant::from_secs_and_nanos(0, 10_000_000).unwrap())
         );
         assert_eq!(
             "1970-01-01T00:00:00.001Z",
-            format(&Instant::from_secs_and_nanos(0, 1_000_000))
+            format(&Instant::from_secs_and_nanos(0, 1_000_000).unwrap())
         );
         assert_eq!(
             "1970-01-01T00:00:00.987654Z",
-            format(&Instant::from_secs_and_nanos(0, 987_654_000))
+            format(&Instant::from_secs_and_nanos(0, 987_654_000).unwrap())
         );
         assert_eq!(
             "1970-01-01T00:00:00.987654Z",
-            format(&Instant::from_secs_and_nanos(0, 987_654_321))
+            format(&Instant::from_secs_and_nanos(0, 987_654_321).unwrap())
         );
         assert_eq!(
             "1970-01-01T00:00:00.000001Z",
-            format(&Instant::from_secs_and_nanos(0, 1_000))
+            format(&Instant::from_secs_and_nanos(0, 1_000).unwrap())
         );
         assert_eq!(
             "1970-01-01T00:00:00Z",
-            format(&Instant::from_secs_and_nanos(0, 1))
+            format(&Instant::from_secs_and_nanos(0, 1).unwrap())
         );
         assert_eq!(
             "1970-01-01T00:00:00.101Z",
-            format(&Instant::from_secs_and_nanos(0, 101_000_000))
+            format(&Instant::from_secs_and_nanos(0, 101_000_000).unwrap())
         );
     }
 
@@ -562,7 +558,7 @@ mod test {
             use chrono::DateTime;
 
             let nanos = micros * 1000;
-            let instant = Instant::from_secs_and_nanos(seconds, nanos);
+            let instant = Instant::from_secs_and_nanos(seconds, nanos).unwrap();
             let formatted = format(&instant);
             let parsed: Instant = DateTime::parse_from_rfc3339(&formatted).unwrap().into();
             assert_eq!(instant, parsed);
