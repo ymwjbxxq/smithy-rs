@@ -36,9 +36,11 @@
 //! Provides the [`Timeout`] future for adding a timeout to another future.
 
 use pin_project_lite::pin_project;
+use std::collections::HashMap;
 use std::error::Error;
 use std::fmt;
 use std::future::Future;
+use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -57,26 +59,42 @@ pin_project! {
     #[non_exhaustive]
     #[must_use = "futures do nothing unless you `.await` or poll them"]
     #[derive(Debug)]
-    pub struct Timeout<T, S> {
+    pub struct Timeout<T, S, E = TimedOutError> {
         #[pin]
         value: T,
         #[pin]
         sleep: S,
+        e: PhantomData<E>
     }
 }
 
-impl<T, S> Timeout<T, S> {
-    pub fn new(value: T, sleep: S) -> Timeout<T, S> {
-        Timeout { value, sleep }
+impl<T, S> Timeout<T, S, TimedOutError> {
+    pub fn new(value: T, sleep: S) -> Timeout<T, S, TimedOutError> {
+        Timeout {
+            value,
+            sleep,
+            e: Default::default(),
+        }
     }
 }
 
-impl<T, S> Future for Timeout<T, S>
+impl<T, S, E> Timeout<T, S, E> {
+    pub fn new_with_error(value: T, sleep: S) -> Timeout<T, S, E> {
+        Timeout {
+            value,
+            sleep,
+            e: Default::default(),
+        }
+    }
+}
+
+impl<T, S, E> Future for Timeout<T, S, E>
 where
     T: Future,
     S: Future,
+    E: From<TimedOutError>,
 {
-    type Output = Result<T::Output, TimedOutError>;
+    type Output = Result<T::Output, E>;
 
     fn poll(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Self::Output> {
         let me = self.project();
@@ -88,7 +106,7 @@ where
 
         // Now check the timer
         match me.sleep.poll(cx) {
-            Poll::Ready(_) => Poll::Ready(Err(TimedOutError)),
+            Poll::Ready(_) => Poll::Ready(Err(TimedOutError.into())),
             Poll::Pending => Poll::Pending,
         }
     }

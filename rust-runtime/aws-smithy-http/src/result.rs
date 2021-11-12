@@ -13,6 +13,7 @@
 //! `Result` wrapper types for [success](SdkSuccess) and [failure](SdkError) responses.
 
 use crate::operation;
+use aws_smithy_async::future::timeout::TimedOutError;
 use aws_smithy_types::retry::ErrorKind;
 use std::error::Error;
 use std::fmt;
@@ -56,6 +57,12 @@ pub enum SdkError<E, R = operation::Response> {
         /// Raw response from the service
         raw: R,
     },
+}
+
+impl<E> From<TimedOutError> for SdkError<E> {
+    fn from(timeout: TimedOutError) -> Self {
+        SdkError::ConstructionFailure(timeout.into())
+    }
 }
 
 /// Error from the underlying Connector

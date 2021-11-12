@@ -57,7 +57,7 @@ where
     }
 }
 
-type BoxedResultFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send>>;
+type BoxedResultFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'static>>;
 
 /// ParseResponseService
 ///
@@ -69,10 +69,13 @@ type BoxedResultFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send>
 /// `R`: The type of the retry policy
 impl<S, O, T, E, R> tower::Service<operation::Operation<O, R>> for ParseResponseService<S, O, R>
 where
-    S: Service<operation::Request, Response = operation::Response, Error = SendOperationError>,
+    S: Service<operation::Request, Response = operation::Response, Error = SendOperationError>
+        + Send,
     S::Future: Send + 'static,
     O: ParseHttpResponse<Output = Result<T, E>> + Send + Sync + 'static,
-    E: Error,
+    E: Error + Send + 'static,
+    T: Send + 'static,
+    R: Send,
 {
     type Response = aws_smithy_http::result::SdkSuccess<T>;
     type Error = aws_smithy_http::result::SdkError<E>;
@@ -129,6 +132,10 @@ where
             resp
         }
         .instrument(span);
-        Box::pin(fut)
+        is_send(Box::pin(fut))
     }
+}
+
+fn is_send<T: Send + 'static>(t: T) -> T {
+    t
 }
