@@ -72,7 +72,8 @@ where
     S: Service<operation::Request, Response = operation::Response, Error = SendOperationError>,
     S::Future: Send + 'static,
     O: ParseHttpResponse<Output = Result<T, E>> + Send + Sync + 'static,
-    E: Error,
+    E: Error + Send,
+    T: Send,
 {
     type Response = aws_smithy_http::result::SdkSuccess<T>;
     type Error = aws_smithy_http::result::SdkError<E>;
@@ -129,6 +130,10 @@ where
             resp
         }
         .instrument(span);
-        Box::pin(fut)
+        check_send(Box::pin(fut))
     }
+}
+
+fn check_send<T: Send>(t: T) -> T {
+    t
 }

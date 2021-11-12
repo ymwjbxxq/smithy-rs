@@ -198,13 +198,16 @@ where
         let connector = self.connector.clone();
         let svc = ServiceBuilder::new()
             // Create a new request-scoped policy
-            .retry(self.retry_policy.new_request_policy())
+            // the Retry service doesn't create send futures because there isn't a sufficient bound on the `Policy` future
+            // .retry(self.retry_policy.new_request_policy())
             .layer(ParseResponseLayer::<O, Retry>::new())
             // These layers can be considered as occurring in order. That is, first invoke the
             // customer-provided middleware, then dispatch dispatch over the wire.
             .layer(&self.middleware)
             .layer(DispatchLayer::new())
             .service(connector);
+
+        let svc = tower_service_send_future(svc);
 
         check_send_sync(svc).ready().await?.call(input).await
     }
@@ -227,4 +230,12 @@ where
             let _ = self.call_raw(o);
         };
     }
+}
+
+fn tower_service_send_future<T, Req>(t: T) -> T
+where
+    T: tower::Service<Req>,
+    T::Future: Send,
+{
+    t
 }
