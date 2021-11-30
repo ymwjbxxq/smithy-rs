@@ -1,0 +1,4 @@
+[workspace]
+members = [
+    "simple/rust-server-codegen","ebs/rust-server-codegen"
+]
