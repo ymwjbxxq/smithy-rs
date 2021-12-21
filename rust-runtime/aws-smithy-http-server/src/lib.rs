@@ -14,6 +14,7 @@ pub mod body;
 pub mod error;
 mod extension;
 pub mod routing;
+pub mod server;
 
 #[doc(hidden)]
 pub mod protocols;
