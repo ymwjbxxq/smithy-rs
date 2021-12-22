@@ -83,6 +83,7 @@ macro_rules! define_rejection {
         pub struct $name(crate::Error);
 
         impl $name {
+            /// Convert an error into $name.
             pub fn from_err<E>(err: E) -> Self
             where
                 E: Into<$crate::BoxError>,

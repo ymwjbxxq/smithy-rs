@@ -16,7 +16,6 @@ NOTE: THIS IS HIGHLY EXPERIMENTAL AND SHOULD NOT BE USED YET.
 publish = false
 
 [dependencies]
-arc-swap = "1.5.0"
 async-trait = "0.1"
 aws-smithy-http = { path = "../aws-smithy-http", features = ["rt-tokio"] }
 aws-smithy-types = { path = "../aws-smithy-types" }
@@ -28,19 +27,24 @@ bytes = "1.1"
 futures-util = { version = "0.3", default-features = false }
 http = "0.2"
 http-body = "0.4"
-hyper = { version = "0.14", features = ["server", "http1", "http2", "tcp"] }
-hyper-rustls = {version = "0.23", features = ["http2"]}
+hyper = { version = "0.14", features = ["full"] }
 mime = "0.3"
 pin-project-lite = "0.2"
 regex = "1.0"
-rustls = "0.20"
-rustls-pemfile = "0.2"
 serde_urlencoded = "0.7"
-thiserror = "1.0.30"
+thiserror = "1.0"
 tokio = { version = "1.0", features = ["full"] }
-tokio-rustls = "0.23"
 tower = { version = "0.4.11", features = ["util", "make"], default-features = false }
 tower-http = { version = "0.1", features = ["add-extension", "map-response-body"] }
+tracing = "0.1"
+
+async-stream = { version = "0.3", optional = true }
+rustls = { version = "0.20", optional = true }
+tokio-rustls = { version = "0.23", optional = true }
+
+[features]
+default = []
+hyper-rustls = ["async-stream", "rustls", "tokio-rustls"]
 
 [dev-dependencies]
 pretty_assertions = "1"
