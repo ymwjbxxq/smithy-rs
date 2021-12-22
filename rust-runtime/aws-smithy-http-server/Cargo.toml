@@ -22,7 +22,6 @@ aws-smithy-types = { path = "../aws-smithy-types" }
 aws-smithy-json = { path = "../aws-smithy-json" }
 aws-smithy-xml = { path = "../aws-smithy-xml" }
 axum-core = "0.1"
-axum-server = { version = "0.3.3", features = ["tls-rustls"] }
 bytes = "1.1"
 futures-util = { version = "0.3", default-features = false }
 http = "0.2"
@@ -35,16 +34,18 @@ serde_urlencoded = "0.7"
 thiserror = "1.0"
 tokio = { version = "1.0", features = ["full"] }
 tower = { version = "0.4.11", features = ["util", "make"], default-features = false }
-tower-http = { version = "0.1", features = ["add-extension", "map-response-body"] }
+tower-http = { version = "0.2", features = ["add-extension", "map-response-body"] }
 tracing = "0.1"
 
+
+axum-server = { version = "0.3.3", features = ["tls-rustls"], optional = true }
 async-stream = { version = "0.3", optional = true }
 rustls = { version = "0.20", optional = true }
 tokio-rustls = { version = "0.23", optional = true }
 
 [features]
 default = []
-hyper-rustls = ["async-stream", "rustls", "tokio-rustls"]
+hyper-rustls = ["async-stream", "rustls", "tokio-rustls", "axum-server"]
 
 [dev-dependencies]
 pretty_assertions = "1"
