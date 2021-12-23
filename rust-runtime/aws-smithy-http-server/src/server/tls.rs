@@ -1,3 +1,8 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0.
+ */
+
 use super::*;
 use async_stream::stream;
 use axum_server::tls_rustls::RustlsConfig;
@@ -13,6 +18,8 @@ use tokio_rustls::TlsAcceptor;
 use tracing::{error, info, warn};
 
 /// Stuff
+/// NOTE: add the same for DER format. Unfortunately the signature of the callback is different, but
+/// we can make it generic probably.
 pub async fn reload_rustls_pem<F, T>(config: RustlsConfig, reload_interval: Duration, cert_and_key_callback: F) -> !
 where
     F: Fn() -> T,
@@ -35,6 +42,8 @@ where
 }
 
 /// Stuff
+/// NOTE: add the same for DER format. Unfortunately the signature of the callback is different, but
+/// we can make it generic probably.
 pub async fn bind_hyper_rustls_pem<F, T>(
     address: &str,
     router: Router,
@@ -58,6 +67,7 @@ where
     let tcp = TcpListener::bind(&address).await?;
     let tls_acceptor = TlsAcceptor::from(config.get_inner());
     // Prepare a long-running future stream to accept and serve clients.
+    // NOTE: how does this work? I dunno..
     let incoming_tls_stream = stream! {
         loop {
             let (socket, _) = tcp.accept().await?;
@@ -74,6 +84,12 @@ where
     let server = Server::builder(acceptor).serve(app);
 
     // Run the future, keep going until an error occurs.
+    // NOTE: calling with_graceful_shutdown doesn't really do gracefull shutdow.
+    // The future passed to the function _have_ to block until you are ready for
+    // shutting down the server, AKA all the connections have been drained or some
+    // timeout has passed.
+    // https://docs.rs/hyper/0.14.16/hyper/server/struct.Server.html#method.with_graceful_shutdown
+    // Ideally we need a notifier that fires when the number of open requests is gone to 0.
     // Ok(server.with_graceful_shutdown(async {
     //     let mut signal_terminate =
     //         signal(SignalKind::terminate()).expect("Unable to register SIGTERM");
