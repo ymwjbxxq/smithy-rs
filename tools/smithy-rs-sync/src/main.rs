@@ -212,6 +212,7 @@ fn set_last_synced_commit(repo: &Repository, oid: &Oid) -> Result<()> {
 
     OpenOptions::new()
         .write(true)
+        .create(true)
         .truncate(true)
         .open(&path)
         .and_then(|mut file| file.write(oid_bytes))
