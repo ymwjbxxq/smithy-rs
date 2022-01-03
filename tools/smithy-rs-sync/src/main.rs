@@ -7,12 +7,14 @@ mod fs;
 
 use crate::fs::{delete_all_generated_files_and_folders, find_handwritten_files_and_folders};
 use anyhow::{anyhow, bail, Context, Result};
-use git2::{Commit, IndexAddOption, ObjectType, Oid, Repository, ResetType, Signature};
+use git2::{
+    AutotagOption, Commit, FetchOptions, ObjectType, Oid, Repository, ResetType, Signature,
+};
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -82,6 +84,11 @@ fn sync_aws_sdk_with_smithy_rs(smithy_rs: &Path, aws_sdk: &Path, branch: &str) -
     // Open the repositories we'll be working with
     let smithy_rs_repo = Repository::open(&smithy_rs).context("couldn't open smithy-rs repo")?;
     let aws_sdk_repo = Repository::open(&aws_sdk).context("couldn't open aws-sdk-rust repo")?;
+
+    if is_running_in_github_action() {
+        fetch_branch(&aws_sdk_repo, branch).context(here!())?;
+        fetch_branch(&smithy_rs_repo, branch).context(here!())?;
+    }
 
     // Check repo that we're going to be moving the code into to see what commit it was last synced with
     let last_synced_commit =
@@ -203,10 +210,16 @@ fn get_last_synced_commit(repo_path: &Path) -> Result<Oid> {
 /// Write the last synced commit to the file in aws-sdk-rust that tracks the last smithy-rs commit it was synced with.
 fn set_last_synced_commit(repo: &Repository, oid: &Oid) -> Result<()> {
     let repo_path = repo.workdir().expect("this will always exist");
+    let oid_string = oid.to_string();
+    let oid_bytes = oid_string.as_bytes();
     let path = repo_path.join(COMMIT_HASH_FILENAME);
-    let mut file = OpenOptions::new().write(true).truncate(true).open(&path)?;
 
-    file.write(oid.to_string().as_bytes())
+    OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(true)
+        .open(&path)
+        .and_then(|mut file| file.write(oid_bytes))
         .with_context(|| format!("Couldn't write commit hash to '{}'", path.display()))?;
 
     Ok(())
@@ -224,12 +237,14 @@ fn build_sdk(smithy_rs_path: &Path) -> Result<PathBuf> {
 
     // The output of running these commands isn't logged anywhere unless they fail
     let _ = run(
-        &[gradlew, "-Paws.fullsdk=true", ":aws:sdk:clean"],
+        // TODO reactivate these once it's working
+        &[gradlew, "-Paws.fullsdk=false", ":aws:sdk:clean"],
         smithy_rs_path,
     )
     .context(here!())?;
     let _ = run(
-        &[gradlew, "-Paws.fullsdk=true", ":aws:sdk:assemble"],
+        // TODO reactivate these once it's working
+        &[gradlew, "-Paws.fullsdk=false", ":aws:sdk:assemble"],
         smithy_rs_path,
     )
     .context(here!())?;
@@ -276,7 +291,10 @@ fn copy_sdk(from_path: &Path, to_path: &Path) -> Result<()> {
 
     // This command uses absolute paths so working dir doesn't matter. Even so, we set
     // working dir to the dir this binary was run from because `run` expects one.
-    let working_dir = std::env::current_dir().expect("can't access current working dir");
+    // GitHub actions don't support current_dir so we use current_exe
+    let exe_dir = std::env::current_exe().expect("can't access path of this exe");
+    let working_dir = exe_dir.parent().expect("exe is not in a folder?");
+
     let _ = run(&["cp", "-r", from_path, to_path], &working_dir).context(here!())?;
 
     eprintln!("\tsuccessfully copied built SDK");
@@ -303,13 +321,30 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
     eprintln!("\tcreating mirror commit...");
 
     // Update the file that tracks what smithy-rs commit the SDK was generated from
-    set_last_synced_commit(aws_sdk_repo, &based_on_commit.id())?;
+    set_last_synced_commit(aws_sdk_repo, &based_on_commit.id()).context(here!())?;
+
+    // // Create place for temporary Git object files to reside
+    let repo_path = aws_sdk_repo.workdir().expect("this will always exist");
+    // let git_path = repo_path.join(".git");
+    // let object_path = git_path.join("object");
+    // std::fs::create_dir_all(&object_path).context(here!())?;
+    //
+    // println!("directory {} exists", &object_path.display());
+    //
+    // let mut index = aws_sdk_repo.index().context(here!())?;
+    // // The equivalent of `git add .`
+    // index
+    //     .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
+    //     .context(here!())?;
+
+    println!(
+        "\tadding files to be committed from {}",
+        repo_path.display()
+    );
+
+    run(&["git", "add", "."], repo_path).context(here!())?;
 
     let mut index = aws_sdk_repo.index().context(here!())?;
-    // The equivalent of `git add .`
-    index
-        .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
-        .context(here!())?;
     let oid = index.write_tree().context(here!())?;
     let parent_commit = find_last_commit(aws_sdk_repo).context(here!())?;
     let tree = aws_sdk_repo.find_tree(oid).context(here!())?;
@@ -406,6 +441,26 @@ where
 {
     let args: Vec<_> = args.iter().map(|s| s.as_ref().to_string_lossy()).collect();
     args.join(" ")
+}
+
+fn is_running_in_github_action() -> bool {
+    std::env::var("GITHUB_ACTIONS").unwrap_or_default() == "true"
+}
+
+fn fetch_branch(repo: &Repository, branch: &str) -> Result<()> {
+    // if running_in_github_actions():
+    //     eprint(f"Fetching base revision {base_commit_sha} from GitHub...")
+    // run(f"git fetch --no-tags --progress --no-recurse-submodules --depth=1 origin {base_commit_sha}")
+    eprintln!("Fetching base revision from GitHub...");
+    repo.find_remote("origin")
+        .context(here!())?
+        .fetch(
+            &[branch],
+            Some(&mut FetchOptions::new().download_tags(AutotagOption::None)),
+            None,
+        )
+        .context(here!())?;
+    Ok(())
 }
 
 #[cfg(test)]
