@@ -133,7 +133,6 @@ impl HandwrittenFiles {
         for pattern in self.patterns() {
             // if the gitignore=handwritten files matches this path, this is hand written
             if pattern.is_excluded(path, path.is_dir()) {
-                eprintln!("{} is handwritten ({:?})", path.display(), pattern);
                 return FileKind::Handwritten;
             }
         }
