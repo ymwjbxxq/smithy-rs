@@ -12,7 +12,7 @@ use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -338,19 +338,11 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
     //         .context(here!())?;
     // }
 
-    // Create place for temporary Git object files to reside
-    let git_path = repo_path.join(".git");
-    let object_path = git_path.join("object");
-    std::fs::create_dir_all(&object_path).context(here!())?;
-
-    println!("directory {} exists", &object_path.display());
-
     let mut index = aws_sdk_repo.index().context(here!())?;
     // The equivalent of `git add .`
     index
         .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
         .context(here!())?;
-
     let oid = index.write_tree().context(here!())?;
     let parent_commit = find_last_commit(aws_sdk_repo).context(here!())?;
     let tree = aws_sdk_repo.find_tree(oid).context(here!())?;
