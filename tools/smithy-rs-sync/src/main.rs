@@ -202,11 +202,19 @@ fn get_last_synced_commit(repo_path: &Path) -> Result<Oid> {
 
 /// Write the last synced commit to the file in aws-sdk-rust that tracks the last smithy-rs commit it was synced with.
 fn set_last_synced_commit(repo: &Repository, oid: &Oid) -> Result<()> {
-    let repo_path = repo.workdir().expect("this will always exist");
+    let repo_path = repo
+        .workdir()
+        .context(here!())
+        .expect("this will always exist");
+    let oid_string = oid.to_string();
+    let oid_bytes = oid_string.as_bytes();
     let path = repo_path.join(COMMIT_HASH_FILENAME);
-    let mut file = OpenOptions::new().write(true).truncate(true).open(&path)?;
 
-    file.write(oid.to_string().as_bytes())
+    OpenOptions::new()
+        .write(true)
+        .truncate(true)
+        .open(&path)
+        .and_then(|mut file| file.write(oid_bytes))
         .with_context(|| format!("Couldn't write commit hash to '{}'", path.display()))?;
 
     Ok(())
@@ -278,7 +286,7 @@ fn copy_sdk(from_path: &Path, to_path: &Path) -> Result<()> {
 
     // This command uses absolute paths so working dir doesn't matter. Even so, we set
     // working dir to the dir this binary was run from because `run` expects one.
-    // GitHub actions don't support current_dir
+    // GitHub actions don't support current_dir so we use current_exe
     let exe_dir = std::env::current_exe().expect("can't access path of this exe");
     let working_dir = exe_dir.parent().expect("exe is not in a folder?");
 
@@ -310,7 +318,7 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
     eprintln!("\tcreating mirror commit...");
 
     // Update the file that tracks what smithy-rs commit the SDK was generated from
-    set_last_synced_commit(aws_sdk_repo, &based_on_commit.id())?;
+    set_last_synced_commit(aws_sdk_repo, &based_on_commit.id()).context(here!())?;
 
     let mut index = aws_sdk_repo.index().context(here!())?;
     // The equivalent of `git add .`
