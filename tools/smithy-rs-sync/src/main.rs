@@ -322,7 +322,9 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
     let repo_path = aws_sdk_repo.workdir().expect("this will always exist");
     let git_path = repo_path.join(".git");
     let object_path = git_path.join("object");
-    std::fs::create_dir_all(object_path).context(here!())?;
+    std::fs::create_dir_all(&object_path).context(here!())?;
+
+    println!("directory {} exists", &object_path.display());
 
     let mut index = aws_sdk_repo.index().context(here!())?;
     // The equivalent of `git add .`
