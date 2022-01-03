@@ -224,12 +224,14 @@ fn build_sdk(smithy_rs_path: &Path) -> Result<PathBuf> {
 
     // The output of running these commands isn't logged anywhere unless they fail
     let _ = run(
-        &[gradlew, "-Paws.fullsdk=true", ":aws:sdk:clean"],
+        // TODO reactivate these once it's working
+        &[gradlew, "-Paws.fullsdk=false", ":aws:sdk:clean"],
         smithy_rs_path,
     )
     .context(here!())?;
     let _ = run(
-        &[gradlew, "-Paws.fullsdk=true", ":aws:sdk:assemble"],
+        // TODO reactivate these once it's working
+        &[gradlew, "-Paws.fullsdk=false", ":aws:sdk:assemble"],
         smithy_rs_path,
     )
     .context(here!())?;
@@ -276,7 +278,14 @@ fn copy_sdk(from_path: &Path, to_path: &Path) -> Result<()> {
 
     // This command uses absolute paths so working dir doesn't matter. Even so, we set
     // working dir to the dir this binary was run from because `run` expects one.
-    let working_dir = std::env::current_dir().expect("can't access current working dir");
+    // GitHub actions don't support current_dir
+    let working_dir = std::env::current_exe()
+        .expect("can't access path of this exe")
+        .parent()
+        .expect("exe is not in a folder?");
+
+    eprintln!("\t'cp -r' working dir is {}", working_dir.display());
+
     let _ = run(&["cp", "-r", from_path, to_path], &working_dir).context(here!())?;
 
     eprintln!("\tsuccessfully copied built SDK");
