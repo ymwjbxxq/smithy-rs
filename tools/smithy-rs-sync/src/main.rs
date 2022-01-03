@@ -7,7 +7,7 @@ mod fs;
 
 use crate::fs::{delete_all_generated_files_and_folders, find_handwritten_files_and_folders};
 use anyhow::{anyhow, bail, Context, Result};
-use git2::{Commit, ObjectType, Oid, Repository, ResetType, Signature};
+use git2::{Commit, IndexAddOption, ObjectType, Oid, Repository, ResetType, Signature};
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::Write;
@@ -237,14 +237,12 @@ fn build_sdk(smithy_rs_path: &Path) -> Result<PathBuf> {
 
     // The output of running these commands isn't logged anywhere unless they fail
     let _ = run(
-        // TODO reactivate these once it's working
-        &[gradlew, "-Paws.fullsdk=false", ":aws:sdk:clean"],
+        &[gradlew, "-Paws.fullsdk=true", ":aws:sdk:clean"],
         smithy_rs_path,
     )
     .context(here!())?;
     let _ = run(
-        // TODO reactivate these once it's working
-        &[gradlew, "-Paws.fullsdk=false", ":aws:sdk:assemble"],
+        &[gradlew, "-Paws.fullsdk=true", ":aws:sdk:assemble"],
         smithy_rs_path,
     )
     .context(here!())?;
@@ -323,39 +321,36 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
     // Update the file that tracks what smithy-rs commit the SDK was generated from
     set_last_synced_commit(aws_sdk_repo, &based_on_commit.id()).context(here!())?;
 
-    // // Create place for temporary Git object files to reside
-    let repo_path = aws_sdk_repo.workdir().expect("this will always exist");
-    // let git_path = repo_path.join(".git");
-    // let object_path = git_path.join("object");
-    // std::fs::create_dir_all(&object_path).context(here!())?;
+    // let repo_path = aws_sdk_repo.workdir().expect("this will always exist");
+    // println!(
+    //     "\tadding files to be committed from {}",
+    //     repo_path.display()
+    // );
     //
-    // println!("directory {} exists", &object_path.display());
+    // if !is_a_git_repository(&repo_path) {
+    //     eprintln!("warning: aws-sdk-rust is not a git repository somehow");
     //
-    // let mut index = aws_sdk_repo.index().context(here!())?;
-    // // The equivalent of `git add .`
-    // index
-    //     .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
-    //     .context(here!())?;
+    //     let _ = Command::new("ls")
+    //         .arg("-la")
+    //         .current_dir(repo_path)
+    //         .stdout(Stdio::inherit())
+    //         .output()
+    //         .context(here!())?;
+    // }
 
-    println!(
-        "\tadding files to be committed from {}",
-        repo_path.display()
-    );
+    // Create place for temporary Git object files to reside
+    let git_path = repo_path.join(".git");
+    let object_path = git_path.join("object");
+    std::fs::create_dir_all(&object_path).context(here!())?;
 
-    if !is_a_git_repository(&repo_path) {
-        eprintln!("warning: aws-sdk-rust is not a git repository somehow");
-
-        let _ = Command::new("ls")
-            .arg("-la")
-            .current_dir(repo_path)
-            .stdout(Stdio::inherit())
-            .output()
-            .context(here!())?;
-    }
-
-    run(&["git", "add", "."], repo_path).context(here!())?;
+    println!("directory {} exists", &object_path.display());
 
     let mut index = aws_sdk_repo.index().context(here!())?;
+    // The equivalent of `git add .`
+    index
+        .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
+        .context(here!())?;
+
     let oid = index.write_tree().context(here!())?;
     let parent_commit = find_last_commit(aws_sdk_repo).context(here!())?;
     let tree = aws_sdk_repo.find_tree(oid).context(here!())?;
