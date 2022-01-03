@@ -332,6 +332,10 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
     //     .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
     //     .context(here!())?;
 
+    println!("adding files to be committed from {}", repo_path.display());
+
+    run(&["ls", "-la"], repo_path).context(here!())?;
+
     run(&["git", "add", "."], repo_path).context(here!())?;
 
     let mut index = aws_sdk_repo.index().context(here!())?;
