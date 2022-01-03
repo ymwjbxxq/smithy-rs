@@ -7,14 +7,12 @@ mod fs;
 
 use crate::fs::{delete_all_generated_files_and_folders, find_handwritten_files_and_folders};
 use anyhow::{anyhow, bail, Context, Result};
-use git2::{
-    AutotagOption, Commit, FetchOptions, ObjectType, Oid, Repository, ResetType, Signature,
-};
+use git2::{Commit, ObjectType, Oid, Repository, ResetType, Signature};
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
+use std::process::Command;
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -438,7 +436,7 @@ where
     args.join(" ")
 }
 
-fn is_running_in_github_action() -> bool {
+fn _is_running_in_github_action() -> bool {
     std::env::var("GITHUB_ACTIONS").unwrap_or_default() == "true"
 }
 
