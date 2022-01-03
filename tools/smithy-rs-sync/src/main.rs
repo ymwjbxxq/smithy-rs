@@ -85,11 +85,6 @@ fn sync_aws_sdk_with_smithy_rs(smithy_rs: &Path, aws_sdk: &Path, branch: &str) -
     let smithy_rs_repo = Repository::open(&smithy_rs).context("couldn't open smithy-rs repo")?;
     let aws_sdk_repo = Repository::open(&aws_sdk).context("couldn't open aws-sdk-rust repo")?;
 
-    if is_running_in_github_action() {
-        fetch_branch(&aws_sdk_repo, branch).context(here!())?;
-        fetch_branch(&smithy_rs_repo, branch).context(here!())?;
-    }
-
     // Check repo that we're going to be moving the code into to see what commit it was last synced with
     let last_synced_commit =
         get_last_synced_commit(&aws_sdk).context("couldn't get last synced commit")?;
@@ -445,22 +440,6 @@ where
 
 fn is_running_in_github_action() -> bool {
     std::env::var("GITHUB_ACTIONS").unwrap_or_default() == "true"
-}
-
-fn fetch_branch(repo: &Repository, branch: &str) -> Result<()> {
-    // if running_in_github_actions():
-    //     eprint(f"Fetching base revision {base_commit_sha} from GitHub...")
-    // run(f"git fetch --no-tags --progress --no-recurse-submodules --depth=1 origin {base_commit_sha}")
-    eprintln!("Fetching base revision from GitHub...");
-    repo.find_remote("origin")
-        .context(here!())?
-        .fetch(
-            &[branch],
-            Some(&mut FetchOptions::new().download_tags(AutotagOption::None)),
-            None,
-        )
-        .context(here!())?;
-    Ok(())
 }
 
 #[cfg(test)]
