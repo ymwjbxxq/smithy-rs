@@ -202,10 +202,7 @@ fn get_last_synced_commit(repo_path: &Path) -> Result<Oid> {
 
 /// Write the last synced commit to the file in aws-sdk-rust that tracks the last smithy-rs commit it was synced with.
 fn set_last_synced_commit(repo: &Repository, oid: &Oid) -> Result<()> {
-    let repo_path = repo
-        .workdir()
-        .context(here!())
-        .expect("this will always exist");
+    let repo_path = repo.workdir().expect("this will always exist");
     let oid_string = oid.to_string();
     let oid_bytes = oid_string.as_bytes();
     let path = repo_path.join(COMMIT_HASH_FILENAME);
@@ -320,6 +317,12 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
 
     // Update the file that tracks what smithy-rs commit the SDK was generated from
     set_last_synced_commit(aws_sdk_repo, &based_on_commit.id()).context(here!())?;
+
+    // Create place for temporary Git object files to reside
+    let repo_path = aws_sdk_repo.workdir().expect("this will always exist");
+    let git_path = repo_path.join(".git");
+    let object_path = git_path.join("object");
+    std::fs::create_dir_all(object_path).context(here!())?;
 
     let mut index = aws_sdk_repo.index().context(here!())?;
     // The equivalent of `git add .`
