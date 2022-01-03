@@ -10,7 +10,7 @@ use anyhow::{anyhow, bail, Context, Result};
 use git2::{Commit, ObjectType, Oid, Repository, ResetType, Signature};
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
-use std::io::{Stdin, Write};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::time::Instant;
@@ -342,7 +342,7 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
         repo_path.display()
     );
 
-    if !is_a_git_repository(&aws_sdk) {
+    if !is_a_git_repository(&repo_path) {
         eprintln!("warning: aws-sdk-rust is not a git repository somehow");
 
         let _ = Command::new("ls")
