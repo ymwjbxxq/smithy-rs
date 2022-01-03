@@ -279,10 +279,8 @@ fn copy_sdk(from_path: &Path, to_path: &Path) -> Result<()> {
     // This command uses absolute paths so working dir doesn't matter. Even so, we set
     // working dir to the dir this binary was run from because `run` expects one.
     // GitHub actions don't support current_dir
-    let working_dir = std::env::current_exe()
-        .expect("can't access path of this exe")
-        .parent()
-        .expect("exe is not in a folder?");
+    let exe_dir = std::env::current_exe().expect("can't access path of this exe");
+    let working_dir = exe_dir.parent().expect("exe is not in a folder?");
 
     eprintln!("\t'cp -r' working dir is {}", working_dir.display());
 
