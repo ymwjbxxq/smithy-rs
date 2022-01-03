@@ -7,12 +7,14 @@ mod fs;
 
 use crate::fs::{delete_all_generated_files_and_folders, find_handwritten_files_and_folders};
 use anyhow::{anyhow, bail, Context, Result};
-use git2::{Commit, ObjectType, Oid, Repository, ResetType, Signature};
+use git2::{
+    AutotagOption, Commit, FetchOptions, ObjectType, Oid, Repository, ResetType, Signature,
+};
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -82,6 +84,11 @@ fn sync_aws_sdk_with_smithy_rs(smithy_rs: &Path, aws_sdk: &Path, branch: &str) -
     // Open the repositories we'll be working with
     let smithy_rs_repo = Repository::open(&smithy_rs).context("couldn't open smithy-rs repo")?;
     let aws_sdk_repo = Repository::open(&aws_sdk).context("couldn't open aws-sdk-rust repo")?;
+
+    if is_running_in_github_action() {
+        fetch_branch(&aws_sdk_repo, branch).context(here!())?;
+        fetch_branch(&smithy_rs_repo, branch).context(here!())?;
+    }
 
     // Check repo that we're going to be moving the code into to see what commit it was last synced with
     let last_synced_commit =
@@ -288,8 +295,6 @@ fn copy_sdk(from_path: &Path, to_path: &Path) -> Result<()> {
     let exe_dir = std::env::current_exe().expect("can't access path of this exe");
     let working_dir = exe_dir.parent().expect("exe is not in a folder?");
 
-    eprintln!("\t'cp -r' working dir is {}", working_dir.display());
-
     let _ = run(&["cp", "-r", from_path, to_path], &working_dir).context(here!())?;
 
     eprintln!("\tsuccessfully copied built SDK");
@@ -332,9 +337,10 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
     //     .add_all(["."].iter(), IndexAddOption::DEFAULT, None)
     //     .context(here!())?;
 
-    println!("adding files to be committed from {}", repo_path.display());
-
-    run(&["ls", "-la"], repo_path).context(here!())?;
+    println!(
+        "\tadding files to be committed from {}",
+        repo_path.display()
+    );
 
     run(&["git", "add", "."], repo_path).context(here!())?;
 
@@ -435,6 +441,26 @@ where
 {
     let args: Vec<_> = args.iter().map(|s| s.as_ref().to_string_lossy()).collect();
     args.join(" ")
+}
+
+fn is_running_in_github_action() -> bool {
+    std::env::var("GITHUB_ACTIONS").unwrap_or_default() == "true"
+}
+
+fn fetch_branch(repo: &Repository, branch: &str) -> Result<()> {
+    // if running_in_github_actions():
+    //     eprint(f"Fetching base revision {base_commit_sha} from GitHub...")
+    // run(f"git fetch --no-tags --progress --no-recurse-submodules --depth=1 origin {base_commit_sha}")
+    eprintln!("Fetching base revision from GitHub...");
+    repo.find_remote("origin")
+        .context(here!())?
+        .fetch(
+            &[branch],
+            Some(&mut FetchOptions::new().download_tags(AutotagOption::None)),
+            None,
+        )
+        .context(here!())?;
+    Ok(())
 }
 
 #[cfg(test)]
