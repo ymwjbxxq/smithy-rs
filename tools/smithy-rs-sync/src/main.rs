@@ -77,7 +77,14 @@ fn sync_aws_sdk_with_smithy_rs(smithy_rs: &Path, aws_sdk: &Path, branch: &str) -
     let smithy_rs = smithy_rs.canonicalize().context(here!())?;
 
     eprintln!("aws-sdk-rust path:\t{}", aws_sdk.display());
+    if !is_a_git_repository(&aws_sdk) {
+        eprintln!("warning: aws-sdk-rust is not a git repository");
+    }
+
     eprintln!("smithy-rs path:\t\t{}", smithy_rs.display());
+    if !is_a_git_repository(&aws_sdk) {
+        eprintln!("warning: smithy-rs is not a git repository");
+    }
 
     // Open the repositories we'll be working with
     let smithy_rs_repo = Repository::open(&smithy_rs).context("couldn't open smithy-rs repo")?;
@@ -438,6 +445,10 @@ where
 
 fn _is_running_in_github_action() -> bool {
     std::env::var("GITHUB_ACTIONS").unwrap_or_default() == "true"
+}
+
+fn is_a_git_repository(dir: &Path) -> bool {
+    dir.join(".git").is_dir()
 }
 
 #[cfg(test)]
