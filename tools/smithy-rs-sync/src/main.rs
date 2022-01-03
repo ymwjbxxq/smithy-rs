@@ -10,9 +10,9 @@ use anyhow::{anyhow, bail, Context, Result};
 use git2::{Commit, ObjectType, Oid, Repository, ResetType, Signature};
 use std::ffi::OsStr;
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{Stdin, Write};
 use std::path::{Path, PathBuf};
-use std::process::Command;
+use std::process::{Command, Stdio};
 use std::time::Instant;
 use structopt::StructOpt;
 
@@ -341,6 +341,17 @@ fn create_mirror_commit(aws_sdk_repo: &Repository, based_on_commit: &Commit) -> 
         "\tadding files to be committed from {}",
         repo_path.display()
     );
+
+    if !is_a_git_repository(&aws_sdk) {
+        eprintln!("warning: aws-sdk-rust is not a git repository somehow");
+
+        let _ = Command::new("ls")
+            .arg("-la")
+            .current_dir(repo_path)
+            .stdout(Stdio::inherit())
+            .output()
+            .context(here!())?;
+    }
 
     run(&["git", "add", "."], repo_path).context(here!())?;
 
