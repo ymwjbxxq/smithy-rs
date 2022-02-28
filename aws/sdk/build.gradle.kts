@@ -30,8 +30,12 @@ val sdkOutputDir = outputDir.resolve("sdk")
 val examplesOutputDir = outputDir.resolve("examples")
 
 buildscript {
+    repositories {
+        mavenLocal()
+    }
     val smithyVersion: String by project
     dependencies {
+        classpath("software.amazon.smithy:aws-event-traits:0.1.0")
         classpath("software.amazon.smithy:smithy-aws-traits:$smithyVersion")
         classpath("software.amazon.smithy:smithy-cli:$smithyVersion")
     }
@@ -43,6 +47,7 @@ dependencies {
     implementation("software.amazon.smithy:smithy-aws-traits:$smithyVersion")
     implementation("software.amazon.smithy:smithy-aws-iam-traits:$smithyVersion")
     implementation("software.amazon.smithy:smithy-aws-cloudformation-traits:$smithyVersion")
+    implementation("software.amazon.smithy:aws-event-traits:0.1.0")
 }
 
 // Class and functions for service and protocol membership for SDK generation
@@ -290,7 +295,7 @@ tasks.register<Exec>("fixManifests") {
     outputs.dir(outputDir)
 
     workingDir(publisherToolPath)
-    commandLine("cargo", "run", "--", "fix-manifests", "--location", outputDir.absolutePath)
+    commandLine("/usr/local/bin/cargo", "run", "--", "fix-manifests", "--location", outputDir.absolutePath)
 
     dependsOn("assemble")
     dependsOn("relocateServices")
@@ -308,7 +313,7 @@ tasks.register<Exec>("hydrateReadme") {
 
     workingDir(publisherToolPath)
     commandLine(
-        "cargo", "run", "--","hydrate-readme",
+        "cargo", "run", "--", "hydrate-readme",
         "--sdk-version", getSdkVersion(),
         "--msrv", getRustMSRV(),
         "--output", outputDir.resolve("README.md").absolutePath

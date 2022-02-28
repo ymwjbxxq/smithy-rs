@@ -78,13 +78,8 @@ fun Project.discoverServices(serviceMembership: Membership): AwsServices {
                     // The smithy models should not include the suffix "service" but currently they do
                     .removeSuffix("service")
                     .removeSuffix("api")
-                val testFile = file.parentFile.resolve("$sdkId-tests.smithy")
-                val extras = if (testFile.exists()) {
-                    logger.warn("Discovered protocol tests for ${file.name}")
-                    listOf(testFile)
-                } else {
-                    listOf()
-                }
+                val testFile = listOf(file.parentFile.resolve("$sdkId-tests.smithy"), file.parentFile.resolve("$sdkId-events.smithy"))
+                val extras = testFile.filter { it.exists() }
                 AwsService(
                     service = service.id.toString(),
                     module = sdkId,
