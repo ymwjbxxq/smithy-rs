@@ -6,6 +6,7 @@
 description = "Rust Runtime"
 plugins {
     kotlin("jvm")
+    `maven-publish`
 }
 
 group = "software.amazon.rustruntime"
@@ -13,6 +14,16 @@ group = "software.amazon.rustruntime"
 version = "0.0.3"
 
 tasks.jar {
+    from("./") {
+        include("inlineable/src/*.rs")
+        include("inlineable/Cargo.toml")
+    }
+}
+
+val sourcesJar by tasks.creating(Jar::class) {
+    group = "publishing"
+    description = "Assembles Kotlin sources jar"
+    classifier = "sources"
     from("./") {
         include("inlineable/src/*.rs")
         include("inlineable/Cargo.toml")
@@ -55,4 +66,18 @@ tasks.register<Exec>("fixManifests") {
     workingDir(rootProject.projectDir.resolve("tools/publisher"))
     commandLine("cargo", "run", "--", "fix-manifests", "--location", runtimeOutputDir.absolutePath)
     dependsOn("fixRuntimeCrateVersions")
+}
+
+publishing {
+    publications {
+        create<MavenPublication>("default") {
+            from(components["java"])
+            artifact(sourcesJar)
+        }
+    }
+    repositories {
+        maven {
+            url = uri("$buildDir/repository")
+        }
+    }
 }

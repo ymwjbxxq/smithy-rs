@@ -12,9 +12,9 @@ plugins {
 
 description = "Generates Rust code from Smithy models"
 extra["displayName"] = "Smithy :: Rust :: Codegen"
-extra["moduleName"] = "software.amazon.software.amazon.smithy.rust.codegen.smithy.rust.codegen"
+extra["moduleName"] = "software.amazon.smithy.rust.codegen.smithy.rust.codegen"
 
-group = "software.amazon.software.amazon.smithy.rust.codegen.smithy"
+group = "software.amazon.smithy.rust.codegen.smithy"
 version = "0.1.0"
 
 val smithyVersion: String by project

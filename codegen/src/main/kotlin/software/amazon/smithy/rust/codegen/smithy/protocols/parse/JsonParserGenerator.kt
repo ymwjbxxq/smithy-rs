@@ -5,6 +5,7 @@
 
 package software.amazon.smithy.rust.codegen.smithy.protocols.parse
 
+import software.amazon.smithy.model.Model
 import software.amazon.smithy.model.shapes.BlobShape
 import software.amazon.smithy.model.shapes.BooleanShape
 import software.amazon.smithy.model.shapes.CollectionShape
@@ -34,7 +35,10 @@ import software.amazon.smithy.rust.codegen.rustlang.rustTemplate
 import software.amazon.smithy.rust.codegen.rustlang.withBlock
 import software.amazon.smithy.rust.codegen.rustlang.withBlockTemplate
 import software.amazon.smithy.rust.codegen.smithy.CodegenContext
+import software.amazon.smithy.rust.codegen.smithy.CodegenMode
+import software.amazon.smithy.rust.codegen.smithy.RuntimeConfig
 import software.amazon.smithy.rust.codegen.smithy.RuntimeType
+import software.amazon.smithy.rust.codegen.smithy.RustSymbolProvider
 import software.amazon.smithy.rust.codegen.smithy.canUseDefault
 import software.amazon.smithy.rust.codegen.smithy.generators.StructureGenerator
 import software.amazon.smithy.rust.codegen.smithy.generators.UnionGenerator
@@ -56,12 +60,120 @@ class JsonParserGenerator(
     codegenContext: CodegenContext,
     private val httpBindingResolver: HttpBindingResolver,
     /** Function that maps a MemberShape into a JSON field name */
-    private val jsonName: (MemberShape) -> String,
+    jsonName: (MemberShape) -> String,
 ) : StructuredDataParserGenerator {
     private val model = codegenContext.model
     private val symbolProvider = codegenContext.symbolProvider
     private val runtimeConfig = codegenContext.runtimeConfig
     private val mode = codegenContext.mode
+    private val smithyJson = CargoDependency.smithyJson(runtimeConfig).asType()
+    private val jsonDeserModule = RustModule.private("json_deser")
+    private val core = JsonParserGeneratorCore(
+        model,
+        symbolProvider,
+        runtimeConfig,
+        mode,
+        jsonName
+    ) { member ->
+        httpBindingResolver.timestampFormat(
+            member,
+            HttpLocation.DOCUMENT,
+            TimestampFormatTrait.Format.EPOCH_SECONDS
+        )
+    }
+    private val codegenScope = arrayOf(
+        "Error" to smithyJson.member("deserialize::Error"),
+        "ErrorReason" to smithyJson.member("deserialize::ErrorReason"),
+        "expect_blob_or_null" to smithyJson.member("deserialize::token::expect_blob_or_null"),
+        "expect_bool_or_null" to smithyJson.member("deserialize::token::expect_bool_or_null"),
+        "expect_document" to smithyJson.member("deserialize::token::expect_document"),
+        "expect_number_or_null" to smithyJson.member("deserialize::token::expect_number_or_null"),
+        "expect_start_array" to smithyJson.member("deserialize::token::expect_start_array"),
+        "expect_start_object" to smithyJson.member("deserialize::token::expect_start_object"),
+        "expect_string_or_null" to smithyJson.member("deserialize::token::expect_string_or_null"),
+        "expect_timestamp_or_null" to smithyJson.member("deserialize::token::expect_timestamp_or_null"),
+        "json_token_iter" to smithyJson.member("deserialize::json_token_iter"),
+        "Peekable" to RuntimeType.std.member("iter::Peekable"),
+        "skip_value" to smithyJson.member("deserialize::token::skip_value"),
+        "skip_to_end" to smithyJson.member("deserialize::token::skip_to_end"),
+        "Token" to smithyJson.member("deserialize::Token"),
+        "or_empty" to core.orEmptyJson(),
+    )
+
+    override fun payloadParser(member: MemberShape): RuntimeType {
+        val shape = model.expectShape(member.target)
+        check(shape is UnionShape || shape is StructureShape || shape is DocumentShape) { "payload parser should only be used on structures & unions" }
+        val fnName = symbolProvider.deserializeFunctionName(shape) + "_payload"
+        return RuntimeType.forInlineFun(fnName, jsonDeserModule) {
+            it.rustBlockTemplate(
+                "pub fn $fnName(input: &[u8]) -> Result<#{Shape}, #{Error}>",
+                *codegenScope,
+                "Shape" to symbolProvider.toSymbol(shape)
+            ) {
+                val input = if (shape is DocumentShape) {
+                    "input"
+                } else {
+                    "#{or_empty}(input)"
+                }
+
+                rustTemplate(
+                    """
+                    let mut tokens_owned = #{json_token_iter}($input).peekable();
+                    let tokens = &mut tokens_owned;
+                    """,
+                    *codegenScope
+                )
+                rust("let result =")
+                with(core) {
+                    deserializeMember(member)
+                    rustTemplate(".ok_or_else(|| #{Error}::custom(\"expected payload member value\"));", *codegenScope)
+                    expectEndOfTokenStream()
+                    rust("result")
+                }
+            }
+        }
+    }
+
+    override fun operationParser(operationShape: OperationShape): RuntimeType? {
+        // Don't generate an operation JSON deserializer if there is no JSON body
+        val httpDocumentMembers = httpBindingResolver.responseMembers(operationShape, HttpLocation.DOCUMENT)
+        if (httpDocumentMembers.isEmpty()) {
+            return null
+        }
+        val outputShape = operationShape.outputShape(model)
+        val fnName = symbolProvider.deserializeFunctionName(operationShape)
+        return core.structureParser(fnName, outputShape, httpDocumentMembers)
+    }
+
+    override fun errorParser(errorShape: StructureShape): RuntimeType? {
+        if (errorShape.members().isEmpty()) {
+            return null
+        }
+        val fnName = symbolProvider.deserializeFunctionName(errorShape) + "_json_err"
+        return core.structureParser(fnName, errorShape, errorShape.members().toList())
+    }
+
+    override fun serverInputParser(operationShape: OperationShape): RuntimeType? {
+        val includedMembers = httpBindingResolver.requestMembers(operationShape, HttpLocation.DOCUMENT)
+        if (includedMembers.isEmpty()) {
+            return null
+        }
+        val inputShape = operationShape.inputShape(model)
+        val fnName = symbolProvider.deserializeFunctionName(operationShape)
+        return core.structureParser(fnName, inputShape, includedMembers)
+    }
+}
+
+class JsonParserGeneratorCore(
+    private val model: Model,
+    private val symbolProvider: RustSymbolProvider,
+    private val runtimeConfig: RuntimeConfig,
+    private val mode: CodegenMode,
+
+    /** Function that maps a MemberShape into a JSON field name */
+    private val jsonName: (MemberShape) -> String,
+    private val timestampFormat: (MemberShape) -> TimestampFormatTrait.Format,
+) {
     private val smithyJson = CargoDependency.smithyJson(runtimeConfig).asType()
     private val jsonDeserModule = RustModule.private("json_deser")
     private val codegenScope = arrayOf(
@@ -83,13 +195,27 @@ class JsonParserGenerator(
         "or_empty" to orEmptyJson(),
     )
 
+    fun orEmptyJson(): RuntimeType = RuntimeType.forInlineFun("or_empty_doc", jsonDeserModule) {
+        it.rust(
+            """
+            pub fn or_empty_doc(data: &[u8]) -> &[u8] {
+                if data.is_empty() {
+                    b"{}"
+                } else {
+                    data
+                }
+            }
+            """
+        )
+    }
+
     /**
      * Reusable structure parser implementation that can be used to generate parsing code for
      * operation, error and structure shapes.
      * We still generate the parser symbol even if there are no included members because the server
      * generation requires parsers for all input structures.
      */
-    private fun structureParser(
+    fun structureParser(
         fnName: String,
         structureShape: StructureShape,
         includedMembers: List<MemberShape>
@@ -116,82 +242,7 @@ class JsonParserGenerator(
         }
     }
 
-    override fun payloadParser(member: MemberShape): RuntimeType {
-        val shape = model.expectShape(member.target)
-        check(shape is UnionShape || shape is StructureShape || shape is DocumentShape) { "payload parser should only be used on structures & unions" }
-        val fnName = symbolProvider.deserializeFunctionName(shape) + "_payload"
-        return RuntimeType.forInlineFun(fnName, jsonDeserModule) {
-            it.rustBlockTemplate(
-                "pub fn $fnName(input: &[u8]) -> Result<#{Shape}, #{Error}>",
-                *codegenScope,
-                "Shape" to symbolProvider.toSymbol(shape)
-            ) {
-                val input = if (shape is DocumentShape) {
-                    "input"
-                } else {
-                    "#{or_empty}(input)"
-                }
-
-                rustTemplate(
-                    """
-                    let mut tokens_owned = #{json_token_iter}($input).peekable();
-                    let tokens = &mut tokens_owned;
-                    """,
-                    *codegenScope
-                )
-                rust("let result =")
-                deserializeMember(member)
-                rustTemplate(".ok_or_else(|| #{Error}::custom(\"expected payload member value\"));", *codegenScope)
-                expectEndOfTokenStream()
-                rust("result")
-            }
-        }
-    }
-
-    override fun operationParser(operationShape: OperationShape): RuntimeType? {
-        // Don't generate an operation JSON deserializer if there is no JSON body
-        val httpDocumentMembers = httpBindingResolver.responseMembers(operationShape, HttpLocation.DOCUMENT)
-        if (httpDocumentMembers.isEmpty()) {
-            return null
-        }
-        val outputShape = operationShape.outputShape(model)
-        val fnName = symbolProvider.deserializeFunctionName(operationShape)
-        return structureParser(fnName, outputShape, httpDocumentMembers)
-    }
-
-    override fun errorParser(errorShape: StructureShape): RuntimeType? {
-        if (errorShape.members().isEmpty()) {
-            return null
-        }
-        val fnName = symbolProvider.deserializeFunctionName(errorShape) + "_json_err"
-        return structureParser(fnName, errorShape, errorShape.members().toList())
-    }
-
-    private fun orEmptyJson(): RuntimeType = RuntimeType.forInlineFun("or_empty_doc", jsonDeserModule) {
-        it.rust(
-            """
-            pub fn or_empty_doc(data: &[u8]) -> &[u8] {
-                if data.is_empty() {
-                    b"{}"
-                } else {
-                    data
-                }
-            }
-            """
-        )
-    }
-
-    override fun serverInputParser(operationShape: OperationShape): RuntimeType? {
-        val includedMembers = httpBindingResolver.requestMembers(operationShape, HttpLocation.DOCUMENT)
-        if (includedMembers.isEmpty()) {
-            return null
-        }
-        val inputShape = operationShape.inputShape(model)
-        val fnName = symbolProvider.deserializeFunctionName(operationShape)
-        return structureParser(fnName, inputShape, includedMembers)
-    }
-
-    private fun RustWriter.expectEndOfTokenStream() {
+    fun RustWriter.expectEndOfTokenStream() {
         rustBlock("if tokens.next().is_some()") {
             rustTemplate(
                 "return Err(#{Error}::custom(\"found more JSON tokens after completing parsing\"));",
@@ -215,7 +266,7 @@ class JsonParserGenerator(
         }
     }
 
-    private fun RustWriter.deserializeMember(memberShape: MemberShape) {
+    fun RustWriter.deserializeMember(memberShape: MemberShape) {
         when (val target = model.expectShape(memberShape.target)) {
             is StringShape -> deserializeString(target)
             is BooleanShape -> rustTemplate("#{expect_bool_or_null}(tokens.next())?", *codegenScope)
@@ -257,10 +308,7 @@ class JsonParserGenerator(
 
     private fun RustWriter.deserializeTimestamp(member: MemberShape) {
         val timestampFormat =
-            httpBindingResolver.timestampFormat(
-                member, HttpLocation.DOCUMENT,
-                TimestampFormatTrait.Format.EPOCH_SECONDS
-            )
+            timestampFormat(member)
         val timestampFormatType = RuntimeType.TimestampFormat(runtimeConfig, timestampFormat)
         rustTemplate("#{expect_timestamp_or_null}(tokens.next(), #{T})?", "T" to timestampFormatType, *codegenScope)
     }
