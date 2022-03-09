@@ -11,6 +11,7 @@
 pub mod boxclone;
 use boxclone::*;
 
+use crate::bounds::SmithyMiddleware;
 use crate::{bounds, retry, Client};
 use aws_smithy_http::body::SdkBody;
 use aws_smithy_http::result::ConnectorError;
@@ -22,45 +23,6 @@ use tower::{Layer, Service, ServiceExt};
 /// Mainly useful if you need to name `R` in a type-erased client. If you do not, you can instead
 /// just use `Client` with no type parameters, which ends up being the same type.
 pub type DynClient<R = retry::Standard> = Client<DynConnector, DynMiddleware<DynConnector>, R>;
-
-impl<C, M, R> Client<C, M, R>
-where
-    C: bounds::SmithyConnector,
-    M: bounds::SmithyMiddleware<C> + Send + Sync + 'static,
-    R: retry::NewRequestPolicy,
-{
-    /// Erase the middleware type from the client type signature.
-    ///
-    /// This makes the final client type easier to name, at the cost of a marginal increase in
-    /// runtime performance. See [`DynMiddleware`] for details.
-    ///
-    /// In practice, you'll use this method once you've constructed a client to your liking:
-    ///
-    /// ```no_run
-    /// # #[cfg(feature = "https")]
-    /// # fn not_main() {
-    /// use aws_smithy_client::{Builder, Client};
-    /// struct MyClient {
-    ///     client: Client<aws_smithy_client::conns::Https>,
-    /// }
-    ///
-    /// let client = Builder::new()
-    ///     .https()
-    ///     .middleware(tower::layer::util::Identity::new())
-    ///     .build();
-    /// let client = MyClient { client: client.into_dyn_middleware() };
-    /// # client.client.check();
-    /// # }
-    pub fn into_dyn_middleware(self) -> Client<C, DynMiddleware<C>, R> {
-        Client {
-            connector: self.connector,
-            middleware: DynMiddleware::new(self.middleware),
-            retry_policy: self.retry_policy,
-            timeout_config: self.timeout_config,
-            sleep_impl: self.sleep_impl,
-        }
-    }
-}
 
 impl<C, M, R> Client<C, M, R>
 where
@@ -101,6 +63,7 @@ where
         }
     }
 
+    /*
     /// Erase the connector and middleware types from the client type signature.
     ///
     /// This makes the final client type easier to name, at the cost of a marginal increase in
@@ -128,7 +91,7 @@ where
     /// # }
     pub fn into_dyn(self) -> DynClient<R> {
         self.into_dyn_connector().into_dyn_middleware()
-    }
+    }*/
 }
 
 /// A Smithy connector that uses dynamic dispatch.
@@ -209,7 +172,12 @@ impl<C> fmt::Debug for DynMiddleware<C> {
 
 impl<C> DynMiddleware<C> {
     /// Construct a new dynamically-dispatched Smithy middleware.
-    pub fn new<M: bounds::SmithyMiddleware<C> + Send + Sync + 'static>(middleware: M) -> Self {
+    pub fn new<M: bounds::SmithyMiddleware<C> + Send + Sync + Clone + 'static>(
+        middleware: M,
+    ) -> Self
+    where
+        <M as SmithyMiddleware<C>>::Service: Clone,
+    {
         Self(ArcCloneLayer::new(middleware))
     }
 }

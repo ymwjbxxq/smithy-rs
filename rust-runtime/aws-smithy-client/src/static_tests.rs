@@ -64,6 +64,7 @@ fn sanity_hyper(hc: crate::hyper_ext::Adapter<hyper::client::HttpConnector>) {
         .check();
 }
 
+/*
 // Statically check that a type-erased middleware client is actually a valid Client.
 #[allow(dead_code)]
 fn sanity_erase_middleware() {
@@ -73,7 +74,7 @@ fn sanity_erase_middleware() {
         .build()
         .into_dyn_middleware()
         .check();
-}
+}*/
 
 // Statically check that a type-erased connector client is actually a valid Client.
 #[allow(dead_code)]
@@ -86,6 +87,7 @@ fn sanity_erase_connector() {
         .check();
 }
 
+/*
 // Statically check that a fully type-erased client is actually a valid Client.
 #[allow(dead_code)]
 fn sanity_erase_full() {
@@ -95,11 +97,12 @@ fn sanity_erase_full() {
         .build()
         .into_dyn()
         .check();
-}
+}*/
 
 fn is_send_sync<T: Send + Sync>(_: T) {}
 fn noarg_is_send_sync<T: Send + Sync>() {}
 
+/*
 // Statically check that a fully type-erased client is still Send + Sync.
 #[allow(dead_code)]
 fn erased_is_send_sync() {
@@ -112,4 +115,4 @@ fn erased_is_send_sync() {
             .build()
             .into_dyn(),
     );
-}
+}*/

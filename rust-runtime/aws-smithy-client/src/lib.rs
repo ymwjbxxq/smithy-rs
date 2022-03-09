@@ -232,7 +232,7 @@ where
         // doesn't know that -- there _could_ theoretically be other implementations of Service for
         // Parsed that don't return those same types. So, we must give the bound.
         bounds::Parsed<<M as bounds::SmithyMiddleware<C>>::Service, O, Retry>:
-            Service<Operation<O, Retry>, Response = SdkSuccess<T>, Error = SdkError<E>> + Clone,
+            Service<Operation<O, Retry>, Response = SdkSuccess<T>, Error = SdkError<E>>,
     {
         if matches!(&self.sleep_impl, TriState::Unset) {
             // during requests, debug log (a warning is emitted during client construction)
@@ -251,10 +251,10 @@ where
 
         let svc = ServiceBuilder::new()
             .layer(TimeoutLayer::new(timeout_service_params.api_call))
-            .retry(
+            /*.retry(
                 self.retry_policy
                     .new_request_policy(self.sleep_impl.clone().into()),
-            )
+            )*/
             .layer(TimeoutLayer::new(timeout_service_params.api_call_attempt))
             .layer(ParseResponseLayer::<O, Retry>::new())
             // These layers can be considered as occurring in order. That is, first invoke the

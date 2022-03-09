@@ -266,6 +266,7 @@ where
     M: bounds::SmithyMiddleware<erase::DynConnector> + Send + Sync + 'static,
     R: retry::NewRequestPolicy,
 {
+    /*
     /// Build a type-erased Smithy service [`Client`].
     ///
     /// Note that if you're using the standard retry mechanism, [`retry::Standard`], `DynClient<R>`
@@ -288,7 +289,7 @@ where
     /// # }
     pub fn build_dyn(self) -> erase::DynClient<R> {
         self.build().into_dyn()
-    }
+    }*/
 }
 
 #[cfg(test)]

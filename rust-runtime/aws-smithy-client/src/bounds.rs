@@ -105,7 +105,7 @@ pub trait SmithyMiddleware<C>:
     /// Forwarding type to `<Self as Layer>::Service` for bound inference.
     ///
     /// See module-level docs for details.
-    type Service: SmithyMiddlewareService + Send + Sync + Clone + 'static;
+    type Service: SmithyMiddlewareService + Send + Sync + 'static;
 }
 
 impl<T, C> SmithyMiddleware<C> for T
