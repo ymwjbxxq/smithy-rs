@@ -279,9 +279,9 @@ class RequestBindingGenerator(
         }
         rust(
             """
-            if $outputVar.is_empty() {
+            /*if $outputVar.is_empty() {
                 return Err(${buildError()})
-            }
+            }*/
             """
         )
     }

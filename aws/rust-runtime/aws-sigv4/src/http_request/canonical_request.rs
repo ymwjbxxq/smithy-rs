@@ -132,6 +132,7 @@ impl<'a> CanonicalRequest<'a> {
             PercentEncodingMode::Double => Cow::Owned(percent_encode_path(path)),
             PercentEncodingMode::Single => Cow::Borrowed(path),
         };
+        let path = Cow::Owned(path.replace("//", "/"));
         let payload_hash = Self::payload_hash(req.body());
 
         let date_time = format_date_time(params.time);

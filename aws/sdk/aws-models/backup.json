@@ -3651,7 +3651,7 @@
                 "smithy.api#documentation": "<p>Returns <code>BackupPlan</code> details for the specified <code>BackupPlanId</code>. The\n         details are the body of a backup plan in JSON format, in addition to plan metadata.</p>",
                 "smithy.api#http": {
                     "method": "GET",
-                    "uri": "/backup/plans/{BackupPlanId}",
+                    "uri": "/backup/plans/{BackupPlanId+}",
                     "code": 200
                 },
                 "smithy.api#idempotent": {}
