@@ -33,6 +33,7 @@ import software.amazon.smithy.rust.codegen.smithy.rustType
 import software.amazon.smithy.rust.codegen.util.dq
 import software.amazon.smithy.rust.codegen.util.toSnakeCase
 
+// TODO This should be renamed to builderRuntimeType, since it's not returning a `Symbol`.
 fun StructureShape.builderSymbol(symbolProvider: RustSymbolProvider): RuntimeType {
     val symbol = symbolProvider.toSymbol(this)
     val builderNamespace = RustReservedWords.escapeIfNeeded(symbol.name.toSnakeCase())

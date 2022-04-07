@@ -128,22 +128,13 @@ fun Symbol.makeRustBoxed(): Symbol {
 
 fun Symbol.Builder.locatedIn(symbolLocation: SymbolLocation): Symbol.Builder {
     val currentRustType = this.build().rustType()
-    check(currentRustType is RustType.Opaque || currentRustType is RustType.Vec) {
-        "Only `Opaque` and `Vec` can have their namespace updated"
+    check(currentRustType is RustType.Opaque) {
+        "Only `Opaque` can have their namespace updated"
     }
-    if (currentRustType is RustType.Opaque) {
-        val newRustType = currentRustType.copy(namespace = "crate::${symbolLocation.namespace}")
-        return this.definitionFile("src/${symbolLocation.filename}")
-            .namespace("crate::${symbolLocation.namespace}", "::")
-            .rustType(newRustType)
-    } else {
-        // TODO This is definitely abusing this. It's saying that the list shape is codegenned in models.rs
-        //   but its namespace is the std::vec:: . It's better that I look for a way to write to models.rs (or somewhere else)
-        //   directly e.g. rustCrate.withModule, rustCrate.withFile.
-        return this.definitionFile("src/${symbolLocation.filename}")
-            .namespace(symbolLocation.namespace, "::")
-            .rustType(currentRustType)
-    }
+    val newRustType = currentRustType.copy(namespace = "crate::${symbolLocation.namespace}")
+    return this.definitionFile("src/${symbolLocation.filename}")
+        .namespace("crate::${symbolLocation.namespace}", "::")
+        .rustType(newRustType)
 }
 
 data class MaybeRenamed(val name: String, val renamedFrom: String?)
@@ -240,13 +231,7 @@ class SymbolVisitor(
 
     override fun listShape(shape: ListShape): Symbol {
         val inner = this.toSymbol(shape.member)
-        val builder = symbolBuilder(shape, RustType.Vec(inner.rustType())).addReference(inner)
-        if (false) {
-            // TODO Only constrained lists should be located in models; we don't codegen anything for regular lists.
-            return builder.build()
-        } else {
-            return builder.locatedIn(Models).build()
-        }
+        return symbolBuilder(shape, RustType.Vec(inner.rustType())).addReference(inner).build()
     }
 
     override fun setShape(shape: SetShape): Symbol {
