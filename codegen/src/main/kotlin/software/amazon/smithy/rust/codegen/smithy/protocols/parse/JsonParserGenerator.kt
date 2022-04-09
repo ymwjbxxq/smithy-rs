@@ -365,7 +365,7 @@ class JsonParserGenerator(
         val symbol = symbolProvider.toSymbol(shape)
         val returnBuilder = StructureGenerator.serverHasFallibleBuilder(shape, model, symbolProvider)
         val returnType = if (returnBuilder) {
-            shape.builderSymbol(symbolProvider).toSymbol()
+            shape.builderSymbol(symbolProvider)
         } else {
             symbol
         }

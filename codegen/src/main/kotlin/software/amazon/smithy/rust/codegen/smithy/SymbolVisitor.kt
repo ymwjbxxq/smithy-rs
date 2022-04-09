@@ -84,6 +84,8 @@ val Operations = SymbolLocation("operation")
 val Serializers = SymbolLocation("serializer")
 val Inputs = SymbolLocation("input")
 val Outputs = SymbolLocation("output")
+// TODO Rename to constraints?
+val Validation = SymbolLocation("validation")
 
 fun Symbol.makeOptional(): Symbol =
     if (isOptional()) {
@@ -315,15 +317,15 @@ class SymbolVisitor(
     override fun timestampShape(shape: TimestampShape?): Symbol {
         return RuntimeType.DateTime(config.runtimeConfig).toSymbol()
     }
+}
 
-    private fun symbolBuilder(shape: Shape?, rustType: RustType): Symbol.Builder {
-        val builder = Symbol.builder().putProperty(SHAPE_KEY, shape)
-        return builder.rustType(rustType)
-            .name(rustType.name)
-            // Every symbol that actually gets defined somewhere should set a definition file
-            // If we ever generate a `thisisabug.rs`, there is a bug in our symbol generation
-            .definitionFile("thisisabug.rs")
-    }
+fun symbolBuilder(shape: Shape?, rustType: RustType): Symbol.Builder {
+    val builder = Symbol.builder().putProperty(SHAPE_KEY, shape)
+    return builder.rustType(rustType)
+        .name(rustType.name)
+        // Every symbol that actually gets defined somewhere should set a definition file
+        // If we ever generate a `thisisabug.rs`, there is a bug in our symbol generation
+        .definitionFile("thisisabug.rs")
 }
 
 // TODO(chore): Move this to a useful place
@@ -371,7 +373,7 @@ fun Symbol.isOptional(): Boolean = when (this.rustType()) {
 fun Symbol.isBoxed(): Boolean = rustType().stripOuter<RustType.Option>() is RustType.Box
 
 // Symbols should _always_ be created with a Rust type & shape attached
-fun Symbol.rustType(): RustType = this.getProperty(RUST_TYPE_KEY, RustType::class.java).get()
+fun Symbol.rustType(): RustType = this.expectProperty(RUST_TYPE_KEY, RustType::class.java)
 fun Symbol.shape(): Shape = this.expectProperty(SHAPE_KEY, Shape::class.java)
 
 fun <T> T.letIf(cond: Boolean, f: (T) -> T): T {
