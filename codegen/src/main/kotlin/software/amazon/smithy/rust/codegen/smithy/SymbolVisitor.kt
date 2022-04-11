@@ -99,10 +99,12 @@ fun Symbol.makeOptional(): Symbol =
             .build()
     }
 
+// TODO This can be written in terms of `mapRustType`.
 fun Symbol.wrapValidated(): Symbol {
     val rustType = RustType.Validated(this.rustType())
     return Symbol.builder()
         .rustType(rustType)
+        // TODO This is a bug. Grep for all `addReference(this)`, they are probably bugs.
         .addReference(this)
         .name(rustType.name)
         .build()
