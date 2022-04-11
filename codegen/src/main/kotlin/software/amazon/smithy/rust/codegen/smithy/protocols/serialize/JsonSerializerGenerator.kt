@@ -34,6 +34,8 @@ import software.amazon.smithy.rust.codegen.rustlang.withBlock
 import software.amazon.smithy.rust.codegen.smithy.CodegenContext
 import software.amazon.smithy.rust.codegen.smithy.RuntimeType
 import software.amazon.smithy.rust.codegen.smithy.RustSymbolProvider
+import software.amazon.smithy.rust.codegen.smithy.customize.NamedSectionGenerator
+import software.amazon.smithy.rust.codegen.smithy.customize.Section
 import software.amazon.smithy.rust.codegen.smithy.generators.UnionGenerator
 import software.amazon.smithy.rust.codegen.smithy.generators.renderUnknownVariant
 import software.amazon.smithy.rust.codegen.smithy.generators.serializationError
@@ -49,11 +51,27 @@ import software.amazon.smithy.rust.codegen.util.hasTrait
 import software.amazon.smithy.rust.codegen.util.inputShape
 import software.amazon.smithy.rust.codegen.util.outputShape
 
+class AwsJsonSerializerGenerator : JsonSerializerGenerator() {
+    override fun serverErrorSerializer(shape: ShapeId): RuntimeType {
+        // return super.serverErrorSerializer(shape)
+    }
+}
+
+sealed class JsonSection(name: String) : Section(name) {
+    /**
+     * Additional documentation comments for the `Config` struct.
+     */
+    data class FinalizeObject(val structureShape: StructureShape) : JsonSection("FinalizeObject")
+}
+
+typealias JsonCustomization = NamedSectionGenerator<JsonSection>
+
 class JsonSerializerGenerator(
     codegenContext: CodegenContext,
     private val httpBindingResolver: HttpBindingResolver,
     /** Function that maps a MemberShape into a JSON field name */
     private val jsonName: (MemberShape) -> String,
+    private val customizations: List<JsonCustomization>,
 ) : StructuredDataSerializerGenerator {
     private data class Context<T : Shape>(
         /** Expression that retrieves a JsonValueWriter from either a JsonObjectWriter or JsonArrayWriter */
@@ -152,7 +170,7 @@ class JsonSerializerGenerator(
      * operation, error and structure shapes.
      * This function is only used by the server, the client uses directly [serializeStructure].
      */
-    private fun serverStructureSerializer(
+    open fun serverStructureSerializer(
         fnName: String,
         structureShape: StructureShape,
         includedMembers: List<MemberShape>
@@ -166,6 +184,7 @@ class JsonSerializerGenerator(
                 rust("let mut out = String::new();")
                 rustTemplate("let mut object = #{JsonObjectWriter}::new(&mut out);", *codegenScope)
                 serializeStructure(StructContext("object", "value", structureShape), includedMembers)
+                customizations.forEach { it.section(JsonSection.FinalizeObject(structureShape))(this) }
                 rust("object.finish();")
                 rustTemplate("Ok(out)", *codegenScope)
             }
