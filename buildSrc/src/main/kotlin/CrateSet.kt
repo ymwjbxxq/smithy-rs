@@ -16,6 +16,7 @@ object CrateSet {
 
     private val SMITHY_RUNTIME_COMMON = listOf(
         "aws-smithy-async",
+        "aws-smithy-checksums",
         "aws-smithy-client",
         "aws-smithy-eventstream",
         "aws-smithy-http",

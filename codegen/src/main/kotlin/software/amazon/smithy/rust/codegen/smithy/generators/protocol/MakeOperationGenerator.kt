@@ -39,7 +39,7 @@ open class MakeOperationGenerator(
     private val protocol: Protocol,
     private val bodyGenerator: ProtocolPayloadGenerator,
     private val public: Boolean,
-    /** Whether or not to include default values for content-length and content-type */
+    /** Whether to include default values for content-length and content-type */
     private val includeDefaultPayloadHeaders: Boolean,
     private val functionName: String = "make_operation",
 ) {
@@ -96,9 +96,9 @@ open class MakeOperationGenerator(
             // When the payload is a `ByteStream`, `into_inner()` already returns an `SdkBody`, so we mute this
             // Clippy warning to make the codegen a little simpler in that case.
             Attribute.Custom("allow(clippy::useless_conversion)").render(this)
+            val streamingMember = shape.inputShape(model).findStreamingMember(model)
             withBlockTemplate("let body = #{SdkBody}::from(", ");", *codegenScope) {
                 bodyGenerator.generatePayload(this, "self", shape)
-                val streamingMember = shape.inputShape(model).findStreamingMember(model)
                 val isBlobStreaming = streamingMember != null && model.expectShape(streamingMember.target) is BlobShape
                 if (isBlobStreaming) {
                     // Consume the `ByteStream` into its inner `SdkBody`.

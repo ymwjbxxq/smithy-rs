@@ -265,10 +265,7 @@ impl http_body::Body for SdkBody {
                 }
                 // If this is **not** the first `HeaderMap` we've encountered, merge it
                 Ok(Some(right_header_map)) if header_map.is_some() => {
-                    header_map = Some(append_merge_header_maps(
-                        header_map.unwrap(),
-                        right_header_map,
-                    ));
+                    append_merge_header_maps(header_map.as_mut().unwrap(), right_header_map);
                 }
                 // Early return if a callback encountered an error.
                 Err(e) => {

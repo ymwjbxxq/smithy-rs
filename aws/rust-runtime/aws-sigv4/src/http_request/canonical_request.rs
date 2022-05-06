@@ -16,7 +16,6 @@ use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::convert::TryFrom;
 use std::fmt;
-use std::fmt::Formatter;
 use std::str::FromStr;
 use std::time::SystemTime;
 
@@ -245,6 +244,9 @@ impl<'a> CanonicalRequest<'a> {
             SignableBody::Bytes(data) => Cow::Owned(sha256_hex_string(data)),
             SignableBody::Precomputed(digest) => Cow::Borrowed(digest.as_str()),
             SignableBody::UnsignedPayload => Cow::Borrowed(UNSIGNED_PAYLOAD),
+            SignableBody::StreamingUnsignedPayloadTrailer => {
+                Cow::Borrowed("STREAMING-UNSIGNED-PAYLOAD-TRAILER")
+            }
         }
     }
 
@@ -474,7 +476,7 @@ impl<'a> StringToSign<'a> {
 }
 
 impl<'a> fmt::Display for StringToSign<'a> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "{}\n{}\n{}\n{}",

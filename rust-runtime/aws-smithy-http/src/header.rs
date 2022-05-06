@@ -294,12 +294,13 @@ pub fn quote_header_value<'a>(value: impl Into<Cow<'a, str>>) -> Cow<'a, str> {
     }
 }
 
-/// Given two [`HeaderMap`][HeaderMap]s, merge them together and return the merged `HeaderMap`. If the
-/// two `HeaderMap`s share any keys, values from the right `HeaderMap` be appended to the left `HeaderMap`.
-pub(crate) fn append_merge_header_maps(
-    mut lhs: HeaderMap<HeaderValue>,
+/// Given two [`HeaderMap`][HeaderMap]s, merge them together and return a `&mut` to the
+/// left-side `HeaderMap`. If the two `HeaderMap`s share any keys, values from the right
+/// `HeaderMap` be appended to the left `HeaderMap`.
+pub fn append_merge_header_maps(
+    lhs: &mut HeaderMap<HeaderValue>,
     rhs: HeaderMap<HeaderValue>,
-) -> HeaderMap<HeaderValue> {
+) -> &mut HeaderMap<HeaderValue> {
     let mut last_header_name_seen = None;
     for (header_name, header_value) in rhs.into_iter() {
         // For each yielded item that has None provided for the `HeaderName`,
@@ -321,6 +322,66 @@ pub(crate) fn append_merge_header_maps(
     lhs
 }
 
+pub fn calculate_streaming_body_trailer_chunk_size(
+    original_content_length: usize,
+    trailers: &HeaderMap,
+) -> (HeaderName, HeaderValue) {
+    let content_chunk_size = calculate_content_chunk_size(original_content_length);
+    let metadata_size = headermap_to_string(trailers).len();
+
+    (
+        HeaderName::from_static(""),
+        HeaderValue::from(content_chunk_size + metadata_size),
+    )
+}
+
+fn int_hex_base(n: usize) -> String {
+    let mut s = format!("{n:#x}");
+    // remove the 0x prefix
+    let s = s.split_off(2);
+
+    s
+}
+
+fn calculate_content_chunk_size(original_content_length: usize) -> usize {
+    let chunk_size = int_hex_base(original_content_length).len() + "\r\n".len();
+    let content_size = original_content_length + "\r\n".len();
+    let null_terminator_size = "0\r\n".len();
+
+    chunk_size + content_size + null_terminator_size
+}
+
+fn headermap_to_string(header_map: &HeaderMap) -> String {
+    use std::fmt::Write;
+    let mut headers = String::new();
+
+    for key in header_map.keys() {
+        write!(headers, "{}:", key).unwrap();
+        let mut values = header_map.get_all(key).iter().map(|v| {
+            v.to_str()
+                .expect("header value only contains visible ASCII chars")
+        });
+
+        // Write first value without preceding comma
+        if let Some(v) = values.next() {
+            write!(headers, "{}", v).unwrap();
+        }
+
+        // Write all other values with a preceding comma
+        for v in values {
+            write!(headers, ",{}", v).unwrap();
+        }
+
+        // Finish off this header with a return + linefeed
+        write!(headers, "\r\n").unwrap();
+    }
+
+    // write final metadata return + linefeed
+    write!(headers, "\r\n").unwrap();
+
+    headers
+}
+
 #[cfg(test)]
 mod test {
     use std::collections::HashMap;
@@ -329,12 +390,10 @@ mod test {
     use http::header::{HeaderMap, HeaderName, HeaderValue};
 
     use crate::header::{
-        append_merge_header_maps, headers_for_prefix, many_dates, read_many_from_str,
-        read_many_primitive, set_request_header_if_absent, set_response_header_if_absent,
-        ParseError,
+        append_merge_header_maps, calculate_streaming_body_trailer_chunk_size, headers_for_prefix,
+        many_dates, quote_header_value, read_many_from_str, read_many_primitive,
+        set_request_header_if_absent, set_response_header_if_absent, ParseError,
     };
-
-    use super::quote_header_value;
 
     #[test]
     fn put_on_request_if_absent() {
@@ -601,7 +660,7 @@ mod test {
         right_hand_side_headers.insert(header_name.clone(), right_header_value.clone());
 
         let merged_header_map =
-            append_merge_header_maps(left_hand_side_headers, right_hand_side_headers);
+            append_merge_header_maps(&mut left_hand_side_headers, right_hand_side_headers);
         let actual_merged_values: Vec<_> = merged_header_map
             .get_all(header_name.clone())
             .into_iter()
@@ -627,7 +686,7 @@ mod test {
         right_hand_side_headers.insert(header_name.clone(), right_header_value.clone());
 
         let merged_header_map =
-            append_merge_header_maps(left_hand_side_headers, right_hand_side_headers);
+            append_merge_header_maps(&mut left_hand_side_headers, right_hand_side_headers);
         let actual_merged_values: Vec<_> = merged_header_map
             .get_all(header_name.clone())
             .into_iter()
@@ -645,14 +704,14 @@ mod test {
         let right_header_value_1 = HeaderValue::from_static("rhs value 1");
         let right_header_value_2 = HeaderValue::from_static("rhs_value 2");
 
-        let left_hand_side_headers = HeaderMap::new();
+        let mut left_hand_side_headers = HeaderMap::new();
 
         let mut right_hand_side_headers = HeaderMap::new();
         right_hand_side_headers.insert(header_name.clone(), right_header_value_1.clone());
         right_hand_side_headers.append(header_name.clone(), right_header_value_2.clone());
 
         let merged_header_map =
-            append_merge_header_maps(left_hand_side_headers, right_hand_side_headers);
+            append_merge_header_maps(&mut left_hand_side_headers, right_hand_side_headers);
         let actual_merged_values: Vec<_> = merged_header_map
             .get_all(header_name.clone())
             .into_iter()
@@ -661,5 +720,25 @@ mod test {
         let expected_merged_values = vec![right_header_value_1, right_header_value_2];
 
         assert_eq!(actual_merged_values, expected_merged_values);
+    }
+
+    #[test]
+    fn test_calculate_streaming_body_and_trailer_chunk_size() {
+        use http::header::{HeaderMap, HeaderName, HeaderValue};
+
+        let content = "Hello world";
+        let mut trailers = HeaderMap::new();
+
+        trailers.insert(
+            HeaderName::from_static("x-amz-checksum-sha256"),
+            HeaderValue::from_static("ZOyIygCyaOW6GjVnihtTFtIS9PNmskdyMlNKiuyjfzw="),
+        );
+
+        let (_, actual_header_value) =
+            calculate_streaming_body_trailer_chunk_size(content.len(), &trailers);
+        // Known correct value for the given inputs
+        let expected_header_value = HeaderValue::from(89);
+
+        assert_eq!(actual_header_value, expected_header_value);
     }
 }

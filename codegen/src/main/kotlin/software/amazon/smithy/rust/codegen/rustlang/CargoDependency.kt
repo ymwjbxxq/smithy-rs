@@ -210,6 +210,7 @@ data class CargoDependency(
         val Tracing: CargoDependency = CargoDependency("tracing", CratesIo("0.1"))
 
         fun SmithyTypes(runtimeConfig: RuntimeConfig) = runtimeConfig.runtimeCrate("types")
+        fun SmithyChecksum(runtimeConfig: RuntimeConfig) = runtimeConfig.runtimeCrate("checksum")
         fun SmithyClient(runtimeConfig: RuntimeConfig) = runtimeConfig.runtimeCrate("client")
         fun SmithyAsync(runtimeConfig: RuntimeConfig) = runtimeConfig.runtimeCrate("async")
         fun SmithyEventStream(runtimeConfig: RuntimeConfig) = runtimeConfig.runtimeCrate("eventstream")
