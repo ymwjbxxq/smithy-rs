@@ -125,7 +125,9 @@ use crate::callback::BodyCallback;
 use bytes::Buf;
 use bytes::Bytes;
 use bytes_utils::SegmentedBuf;
+use http_body::combinators::UnsyncBoxBody;
 use http_body::Body;
+use http_body::Body as HttpBody;
 use pin_project::pin_project;
 use std::error::Error as StdError;
 use std::fmt::{Debug, Formatter};
@@ -228,22 +230,22 @@ pub use self::bytestream_util::FsBuilder;
 ///
 #[pin_project]
 #[derive(Debug)]
-pub struct ByteStream(#[pin] Inner<SdkBody>);
+pub struct ByteStream<Body: HttpBody = SdkBody>(#[pin] Inner<Body>);
 
-impl ByteStream {
-    pub fn new(body: SdkBody) -> Self {
+impl<
+        B: HttpBody<Data = bytes::Bytes, Error = Box<(dyn std::error::Error + Send + Sync + 'static)>>,
+    > ByteStream<B>
+{
+    pub fn new(body: B) -> Self {
         Self(Inner::new(body))
-    }
-
-    pub fn from_static(bytes: &'static [u8]) -> Self {
-        Self(Inner::new(SdkBody::from(Bytes::from_static(bytes))))
     }
 
     /// Consumes the ByteStream, returning the wrapped SdkBody
     // Backwards compatibility note: Because SdkBody has a dyn variant,
     // we will always be able to implement this method, even if we stop using
     // SdkBody as the internal representation
-    pub fn into_inner(self) -> SdkBody {
+    #[doc(hidden)]
+    pub fn into_inner(self) -> B {
         self.0.body
     }
 
@@ -265,6 +267,18 @@ impl ByteStream {
     /// ```
     pub async fn collect(self) -> Result<AggregatedBytes, Error> {
         self.0.collect().await.map_err(|err| Error(err))
+    }
+}
+
+impl<
+        B: HttpBody<
+                Data = bytes::Bytes,
+                Error = Box<(dyn std::error::Error + Send + Sync + 'static)>,
+            > + From<Bytes>,
+    > ByteStream<B>
+{
+    pub fn from_static(bytes: &'static [u8]) -> Self {
+        Self(Inner::new(B::from(Bytes::from_static(bytes))))
     }
 
     /// Returns a [`FsBuilder`](crate::byte_stream::FsBuilder), allowing you to build a `ByteStream` with
@@ -290,10 +304,19 @@ impl ByteStream {
     /// ```
     #[cfg(feature = "rt-tokio")]
     #[cfg_attr(docsrs, doc(cfg(feature = "rt-tokio")))]
-    pub fn read_from() -> FsBuilder {
-        FsBuilder::new()
+    pub fn read_from() -> FsBuilder<B> {
+        FsBuilder::<B>::new()
     }
+}
 
+impl<
+        B: From<UnsyncBoxBody<bytes::Bytes, Box<(dyn std::error::Error + Send + Sync + 'static)>>>
+            + http_body::Body<
+                Data = bytes::Bytes,
+                Error = Box<(dyn std::error::Error + Send + Sync + 'static)>,
+            >,
+    > ByteStream<B>
+{
     /// Create a ByteStream that streams data from the filesystem
     ///
     /// This function creates a retryable ByteStream for a given `path`. The returned ByteStream
@@ -337,21 +360,29 @@ impl ByteStream {
     pub async fn from_file(file: tokio::fs::File) -> Result<Self, Error> {
         FsBuilder::new().file(file).build().await
     }
+}
 
+impl<
+        B: HttpBody<
+                Data = bytes::Bytes,
+                Error = Box<(dyn std::error::Error + Send + Sync + 'static)>,
+            > + From<Bytes>,
+    > Default for ByteStream<B>
+{
+    fn default() -> Self {
+        Self(Inner {
+            body: B::from(Bytes::new()),
+        })
+    }
+}
+
+impl ByteStream<SdkBody> {
     /// Set a callback on this `ByteStream`. The callback's methods will be called at various points
     /// throughout this `ByteStream`'s life cycle. See the [`BodyCallback`](BodyCallback) trait for
     /// more information.
     pub fn with_body_callback(&mut self, body_callback: Box<dyn BodyCallback>) -> &mut Self {
         self.0.with_body_callback(body_callback);
         self
-    }
-}
-
-impl Default for ByteStream {
-    fn default() -> Self {
-        Self(Inner {
-            body: SdkBody::from(""),
-        })
     }
 }
 
@@ -559,7 +590,6 @@ mod tests {
     async fn path_based_bytestreams() -> Result<(), Box<dyn std::error::Error>> {
         use super::ByteStream;
         use bytes::Buf;
-        use http_body::Body;
         use std::io::Write;
         use tempfile::NamedTempFile;
         let mut file = NamedTempFile::new()?;
@@ -567,7 +597,7 @@ mod tests {
         for i in 0..10000 {
             writeln!(file, "Brian was here. Briefly. {}", i)?;
         }
-        let body = ByteStream::from_path(&file).await?.into_inner();
+        let body = ByteStream::<SdkBody>::from_path(&file).await?.into_inner();
         // assert that a valid size hint is immediately ready
         assert_eq!(body.size_hint().exact(), Some(298890));
         let mut body1 = body.try_clone().expect("retryable bodies are cloneable");
@@ -609,7 +639,7 @@ mod tests {
         for i in 0..10000 {
             writeln!(file, "Brian was here. Briefly. {}", i)?;
         }
-        let body = ByteStream::read_from()
+        let body = ByteStream::<SdkBody>::read_from()
             .path(&file)
             .buffer_size(16384)
             // This isn't the right file length - one shouldn't do this in real code

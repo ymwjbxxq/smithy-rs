@@ -6,16 +6,16 @@
 use bytes::Bytes;
 use futures_core::{ready, Stream};
 use http::HeaderMap;
+use http_body::combinators::UnsyncBoxBody;
 use http_body::{Body, SizeHint};
 use std::future::Future;
+use std::marker::PhantomData;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::fs::File;
 use tokio::io;
 use tokio_util::io::ReaderStream;
-
-use crate::body::SdkBody;
 
 use super::{ByteStream, Error};
 
@@ -77,20 +77,21 @@ impl PathBody {
 /// }
 /// # }
 /// ```
-pub struct FsBuilder {
+pub struct FsBuilder<B> {
     file: Option<tokio::fs::File>,
     path: Option<PathBuf>,
     file_size: Option<u64>,
     buffer_size: usize,
+    _b: PhantomData<B>,
 }
 
-impl Default for FsBuilder {
+impl<B> Default for FsBuilder<B> {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl FsBuilder {
+impl<B> FsBuilder<B> {
     /// Create a new [`FsBuilder`] (using a default read buffer of 4096 bytes).
     ///
     /// You must then call either [`file`](FsBuilder::file) or [`path`](FsBuilder::path) to specify what to read from.
@@ -100,6 +101,7 @@ impl FsBuilder {
             path: None,
             file_size: None,
             buffer_size: DEFAULT_BUFFER_SIZE,
+            _b: Default::default(),
         }
     }
 
@@ -138,7 +140,16 @@ impl FsBuilder {
         self.buffer_size = buffer_size;
         self
     }
+}
 
+impl<
+        B: From<UnsyncBoxBody<bytes::Bytes, Box<(dyn std::error::Error + Send + Sync + 'static)>>>
+            + http_body::Body<
+                Data = bytes::Bytes,
+                Error = Box<(dyn std::error::Error + Send + Sync + 'static)>,
+            >,
+    > FsBuilder<B>
+{
     /// Returns a [`ByteStream`](crate::byte_stream::ByteStream) from this builder.
     /// NOTE: If both [`file`](FsBuilder::file) and [`path`](FsBuilder::path) have been called for this FsBuilder, `build` will
     /// read from the path specified by [`path`](FsBuilder::path).
@@ -146,7 +157,7 @@ impl FsBuilder {
     /// # Panics
     ///
     /// Panics if neither of the `file` or`path` setters were called.
-    pub async fn build(self) -> Result<ByteStream, Error> {
+    pub async fn build(self) -> Result<ByteStream<B>, Error> {
         let buffer_size = self.buffer_size;
 
         if let Some(path) = self.path {
@@ -158,14 +169,11 @@ impl FsBuilder {
                     .len(),
             );
 
-            let body_loader = move || {
-                SdkBody::from_dyn(http_body::combinators::BoxBody::new(PathBody::from_path(
-                    path_buf.clone(),
-                    file_size,
-                    buffer_size,
-                )))
-            };
-            Ok(ByteStream::new(SdkBody::retryable(body_loader)))
+            let body_loader = B::from(http_body::combinators::UnsyncBoxBody::new(
+                PathBody::from_path(path_buf.clone(), file_size, buffer_size),
+            ));
+            Ok(ByteStream::new(body_loader))
+            // Ok(ByteStream::new(SdkBody::retryable(body_loader)))
         } else if let Some(file) = self.file {
             let file_size = self.file_size.unwrap_or(
                 file.metadata()
@@ -174,7 +182,7 @@ impl FsBuilder {
                     .len(),
             );
 
-            let body = SdkBody::from_dyn(http_body::combinators::BoxBody::new(
+            let body = B::from(http_body::combinators::UnsyncBoxBody::new(
                 PathBody::from_file(file, file_size, buffer_size),
             ));
 
