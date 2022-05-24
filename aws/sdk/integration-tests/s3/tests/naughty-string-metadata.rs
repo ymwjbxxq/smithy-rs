@@ -23,8 +23,6 @@ const NAUGHTY_STRINGS: &str = include_str!("blns/blns.txt");
 // // NOTE: this won't actually succeed, you'll get a 400 back from S3 because the headers are too long.
 // #[tokio::test]
 // async fn test_metadata_field_against_naughty_strings_list() -> Result<(), aws_sdk_s3::Error> {
-//     // re-add `aws-config = { path = "../../build/aws-sdk/aws-config" }` to this project's Cargo.toml
-//
 //     let config = aws_config::load_from_env().await;
 //     let client = aws_sdk_s3::Client::new(&config);
 //
@@ -32,7 +30,7 @@ const NAUGHTY_STRINGS: &str = include_str!("blns/blns.txt");
 //         .put_object()
 //         .bucket("your-test-bucket-goes-here")
 //         .key("test.txt")
-//         .body(aws_sdk_s3::ByteStream::from_static(b"some test text"));
+//         .body(aws_sdk_s3::types::ByteStream::from_static(b"some test text"));
 //
 //     for (idx, line) in NAUGHTY_STRINGS.split('\n').enumerate() {
 //         // add lines to metadata unless they're a comment or empty

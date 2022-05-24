@@ -29,6 +29,8 @@ pub struct SigningSettings {
 
     /// Headers that should be excluded from the signing process
     pub excluded_headers: Option<Vec<HeaderName>>,
+
+    pub request_includes_trailers: bool,
 }
 
 /// HTTP payload checksum type
@@ -72,6 +74,7 @@ impl Default for SigningSettings {
             signature_location: SignatureLocation::Headers,
             expires_in: None,
             excluded_headers: Some(EXCLUDED_HEADERS.to_vec()),
+            request_includes_trailers: false,
         }
     }
 }

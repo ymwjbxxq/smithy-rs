@@ -62,6 +62,7 @@ impl OperationSigningConfig {
             signing_options: SigningOptions {
                 double_uri_encode: true,
                 content_sha256_header: false,
+                request_includes_trailers: false,
             },
             signing_requirements: SigningRequirements::Required,
             expires_in: None,
@@ -88,6 +89,7 @@ pub enum SigningRequirements {
 pub struct SigningOptions {
     pub double_uri_encode: bool,
     pub content_sha256_header: bool,
+    pub request_includes_trailers: bool,
     /*
     Currently unsupported:
     pub normalize_uri_path: bool,
@@ -145,6 +147,8 @@ impl SigV4Signer {
             HttpSignatureType::HttpRequestQueryParams => SignatureLocation::QueryParams,
         };
         settings.expires_in = operation_config.expires_in;
+        settings.request_includes_trailers =
+            operation_config.signing_options.request_includes_trailers;
         settings
     }
 
@@ -185,11 +189,13 @@ impl SigV4Signer {
         request: &mut http::Request<SdkBody>,
     ) -> Result<Signature, SigningError> {
         let settings = Self::settings(operation_config);
+        let request_includes_trailers = settings.request_includes_trailers;
         let signing_params = Self::signing_params(settings, credentials, request_config);
 
         let (signing_instructions, signature) = {
             // A body that is already in memory can be signed directly. A body that is not in memory
-            // (any sort of streaming body or presigned request) will be signed via UNSIGNED-PAYLOAD.
+            // (any sort of streaming body or presigned request) will be signed via UNSIGNED-PAYLOAD
+            // when it includes no trailers and STREAMING-UNSIGNED-PAYLOAD-TRAILER when it does.
             let signable_body = request_config
                 .payload_override
                 // the payload_override is a cheap clone because it contains either a
@@ -200,7 +206,13 @@ impl SigV4Signer {
                         .body()
                         .bytes()
                         .map(SignableBody::Bytes)
-                        .unwrap_or(SignableBody::UnsignedPayload)
+                        .unwrap_or_else(|| {
+                            if request_includes_trailers {
+                                SignableBody::StreamingUnsignedPayloadTrailer
+                            } else {
+                                SignableBody::UnsignedPayload
+                            }
+                        })
                 });
 
             let signable_request = SignableRequest::new(

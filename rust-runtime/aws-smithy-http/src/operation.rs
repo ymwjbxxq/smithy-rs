@@ -7,6 +7,7 @@ use crate::body::SdkBody;
 use crate::property_bag::{PropertyBag, SharedPropertyBag};
 use aws_smithy_types::date_time::DateTimeFormatError;
 use http::uri::InvalidUri;
+use http::HeaderMap;
 use std::borrow::Cow;
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -296,6 +297,10 @@ impl Request {
     /// Gives readonly access to the underlying HTTP request.
     pub fn http(&self) -> &http::Request<SdkBody> {
         &self.inner
+    }
+
+    pub fn headers_mut(&mut self) -> &mut HeaderMap {
+        self.inner.headers_mut()
     }
 
     /// Attempts to clone the operation `Request`. This can fail if the

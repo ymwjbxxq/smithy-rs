@@ -101,6 +101,12 @@ pub enum SignableBody<'a> {
     /// lowercase hex encoded. Eg:
     /// `e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855`
     Precomputed(String),
+
+    /// An unsigned payload with trailers
+    ///
+    /// StreamingUnsignedPayloadTrailer is used for streaming requests where the contents of the
+    /// body cannot be known prior to signing **AND** which include HTTP trailers.
+    StreamingUnsignedPayloadTrailer,
 }
 
 #[derive(Debug)]

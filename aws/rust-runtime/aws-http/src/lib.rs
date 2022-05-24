@@ -24,3 +24,6 @@ pub mod retry;
 
 /// User agent middleware
 pub mod user_agent;
+
+/// HTTP Body wrappers for AWS-specific content encodings
+pub mod content_encoding;
