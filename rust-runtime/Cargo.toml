@@ -15,4 +15,6 @@ members = [
     "aws-smithy-types-convert",
     "aws-smithy-xml",
     "aws-smithy-http-server",
+    "aws-smithy-http-server",
+    "aws-smithy-http-server-python",
 ]

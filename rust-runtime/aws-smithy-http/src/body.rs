@@ -1,6 +1,6 @@
 /*
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
- * SPDX-License-Identifier: Apache-2.0.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 use bytes::Bytes;
@@ -265,7 +265,10 @@ impl http_body::Body for SdkBody {
                 }
                 // If this is **not** the first `HeaderMap` we've encountered, merge it
                 Ok(Some(right_header_map)) if header_map.is_some() => {
-                    append_merge_header_maps(header_map.as_mut().unwrap(), right_header_map);
+                    header_map = Some(append_merge_header_maps(
+                        header_map.unwrap(),
+                        right_header_map,
+                    ));
                 }
                 // Early return if a callback encountered an error.
                 Err(e) => {

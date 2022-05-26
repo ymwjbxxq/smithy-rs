@@ -1,3 +1,8 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 use aws_smithy_checksums::str_to_body_callback;
 use aws_smithy_http::byte_stream::ByteStream;
 use http::HeaderValue;

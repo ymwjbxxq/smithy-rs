@@ -1,6 +1,6 @@
 /*
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
- * SPDX-License-Identifier: Apache-2.0.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 //! Checksum calculation and verification callbacks
@@ -12,7 +12,6 @@ use http::header::{HeaderMap, HeaderName, HeaderValue};
 use sha1::Digest;
 use std::io::Write;
 
-const MD5_NAME: &str = "content-md5";
 const CRC_32_NAME: &str = "x-amz-checksum-crc32";
 const CRC_32_C_NAME: &str = "x-amz-checksum-crc32c";
 const SHA_1_NAME: &str = "x-amz-checksum-sha1";
@@ -20,49 +19,12 @@ const SHA_256_NAME: &str = "x-amz-checksum-sha256";
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
-struct Md5Callback {
-    context: md5::Context,
-}
-
-impl Default for Md5Callback {
-    fn default() -> Self {
-        Self {
-            context: md5::Context::new(),
-        }
-    }
-}
-
-impl BodyCallback for Md5Callback {
-    fn update(&mut self, bytes: &[u8]) -> Result<(), BoxError> {
-        self.context.consume(bytes);
-
-        Ok(())
-    }
-
-    fn trailers(&self) -> Result<Option<HeaderMap<HeaderValue>>, BoxError> {
-        let mut header_map = HeaderMap::new();
-        let key = HeaderName::from_static(MD5_NAME);
-        // We clone the context because `Context::compute` consumes `self`
-        let checksum = self.context.clone().compute();
-        let value = HeaderValue::from_str(&base64::encode(&checksum[..]))
-            .expect("base64 will always produce valid header values from checksums");
-
-        header_map.insert(key, value);
-
-        Ok(Some(header_map))
-    }
-
-    fn make_new(&self) -> Box<dyn BodyCallback> {
-        Box::new(Md5Callback::default())
-    }
-}
-
 #[derive(Debug, Default)]
-struct Crc32Callback {
+struct Crc32callback {
     hasher: crc32fast::Hasher,
 }
 
-impl Crc32Callback {
+impl Crc32callback {
     fn update(&mut self, bytes: &[u8]) -> Result<(), BoxError> {
         self.hasher.update(bytes);
 
@@ -83,7 +45,7 @@ impl Crc32Callback {
     }
 }
 
-impl BodyCallback for Crc32Callback {
+impl BodyCallback for Crc32callback {
     fn update(&mut self, bytes: &[u8]) -> Result<(), BoxError> {
         self.update(bytes)
     }
@@ -93,7 +55,7 @@ impl BodyCallback for Crc32Callback {
     }
 
     fn make_new(&self) -> Box<dyn BodyCallback> {
-        Box::new(Crc32Callback::default())
+        Box::new(Crc32callback::default())
     }
 }
 
@@ -220,54 +182,10 @@ impl BodyCallback for Sha256Callback {
     }
 }
 
-/// For a given checksum algorithm name, return the appropriate checksum callback struct,
-/// as a `Box<dyn BodyCallback>`.
-///
-/// # Panics
-///
-/// This will panic if there is no corresponding checksum callback struct for the given algorithm name.
-pub fn str_to_body_callback(algorithm_name: &str) -> Box<dyn BodyCallback> {
-    if "crc32".eq_ignore_ascii_case(algorithm_name) {
-        return Box::new(Crc32Callback::default());
-    }
-    if "crc32c".eq_ignore_ascii_case(algorithm_name) {
-        return Box::new(Crc32cCallback::default());
-    }
-    if "sha1".eq_ignore_ascii_case(algorithm_name) {
-        return Box::new(Sha1Callback::default());
-    }
-    if "sha256".eq_ignore_ascii_case(algorithm_name) {
-        return Box::new(Sha256Callback::default());
-    }
-
-    // Not handling MD5 is a deliberate choice, the generated SDKs will never use this
-    // function to create an MD5 callback.
-    todo!("handle case where nothing matches")
-}
-
-pub fn str_to_header_value(algorithm_name: &str) -> HeaderValue {
-    if "crc32".eq_ignore_ascii_case(algorithm_name) {
-        return HeaderValue::from_static(CRC_32_NAME);
-    }
-    if "crc32c".eq_ignore_ascii_case(algorithm_name) {
-        return HeaderValue::from_static(CRC_32_C_NAME);
-    }
-    if "sha1".eq_ignore_ascii_case(algorithm_name) {
-        return HeaderValue::from_static(SHA_1_NAME);
-    }
-    if "sha256".eq_ignore_ascii_case(algorithm_name) {
-        return HeaderValue::from_static(SHA_256_NAME);
-    }
-
-    // Not handling MD5 is a deliberate choice, the generated SDKs will never use this
-    // function to create an MD5 callback.
-    todo!("handle case where nothing matches")
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        Crc32Callback, Crc32cCallback, Sha1Callback, Sha256Callback, CRC_32_C_NAME, CRC_32_NAME,
+        Crc32cCallback, Crc32callback, Sha1Callback, Sha256Callback, CRC_32_C_NAME, CRC_32_NAME,
         SHA_1_NAME, SHA_256_NAME,
     };
 
@@ -289,7 +207,7 @@ mod tests {
 
     #[test]
     fn test_crc32_checksum() {
-        let mut checksum_callback = Crc32Callback::default();
+        let mut checksum_callback = Crc32callback::default();
         checksum_callback.update(TEST_DATA.as_bytes()).unwrap();
         let checksum_callback_result = checksum_callback.trailers().unwrap().unwrap();
         let encoded_checksum = checksum_callback_result.get(CRC_32_NAME).unwrap();

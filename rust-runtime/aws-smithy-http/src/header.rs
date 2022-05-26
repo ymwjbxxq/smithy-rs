@@ -1,6 +1,6 @@
 /*
  * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
- * SPDX-License-Identifier: Apache-2.0.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 //! Utilities for parsing information from headers
@@ -389,7 +389,7 @@ mod test {
     use aws_smithy_types::{date_time::Format, DateTime};
     use http::header::{HeaderMap, HeaderName, HeaderValue};
 
-    use crate::header::{
+    use super::{
         append_merge_header_maps, calculate_streaming_body_trailer_chunk_size, headers_for_prefix,
         many_dates, quote_header_value, read_many_from_str, read_many_primitive,
         set_request_header_if_absent, set_response_header_if_absent, ParseError,
@@ -660,7 +660,7 @@ mod test {
         right_hand_side_headers.insert(header_name.clone(), right_header_value.clone());
 
         let merged_header_map =
-            append_merge_header_maps(&mut left_hand_side_headers, right_hand_side_headers);
+            append_merge_header_maps(left_hand_side_headers, right_hand_side_headers);
         let actual_merged_values: Vec<_> = merged_header_map
             .get_all(header_name.clone())
             .into_iter()
@@ -686,7 +686,7 @@ mod test {
         right_hand_side_headers.insert(header_name.clone(), right_header_value.clone());
 
         let merged_header_map =
-            append_merge_header_maps(&mut left_hand_side_headers, right_hand_side_headers);
+            append_merge_header_maps(left_hand_side_headers, right_hand_side_headers);
         let actual_merged_values: Vec<_> = merged_header_map
             .get_all(header_name.clone())
             .into_iter()
@@ -704,14 +704,14 @@ mod test {
         let right_header_value_1 = HeaderValue::from_static("rhs value 1");
         let right_header_value_2 = HeaderValue::from_static("rhs_value 2");
 
-        let mut left_hand_side_headers = HeaderMap::new();
+        let left_hand_side_headers = HeaderMap::new();
 
         let mut right_hand_side_headers = HeaderMap::new();
         right_hand_side_headers.insert(header_name.clone(), right_header_value_1.clone());
         right_hand_side_headers.append(header_name.clone(), right_header_value_2.clone());
 
         let merged_header_map =
-            append_merge_header_maps(&mut left_hand_side_headers, right_hand_side_headers);
+            append_merge_header_maps(left_hand_side_headers, right_hand_side_headers);
         let actual_merged_values: Vec<_> = merged_header_map
             .get_all(header_name.clone())
             .into_iter()
@@ -720,25 +720,5 @@ mod test {
         let expected_merged_values = vec![right_header_value_1, right_header_value_2];
 
         assert_eq!(actual_merged_values, expected_merged_values);
-    }
-
-    #[test]
-    fn test_calculate_streaming_body_and_trailer_chunk_size() {
-        use http::header::{HeaderMap, HeaderName, HeaderValue};
-
-        let content = "Hello world";
-        let mut trailers = HeaderMap::new();
-
-        trailers.insert(
-            HeaderName::from_static("x-amz-checksum-sha256"),
-            HeaderValue::from_static("ZOyIygCyaOW6GjVnihtTFtIS9PNmskdyMlNKiuyjfzw="),
-        );
-
-        let (_, actual_header_value) =
-            calculate_streaming_body_trailer_chunk_size(content.len(), &trailers);
-        // Known correct value for the given inputs
-        let expected_header_value = HeaderValue::from(89);
-
-        assert_eq!(actual_header_value, expected_header_value);
     }
 }
