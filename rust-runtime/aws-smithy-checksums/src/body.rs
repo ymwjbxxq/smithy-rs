@@ -1,14 +1,19 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 use crate::ChecksumCallback;
 
 use aws_smithy_http::body::SdkBody;
 use aws_smithy_http::header::append_merge_header_maps;
 
 use bytes::{Buf, Bytes};
+use http::header::HeaderName;
 use http::{HeaderMap, HeaderValue};
 use http_body::{Body, SizeHint};
 use pin_project::pin_project;
 
-use http::header::HeaderName;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 

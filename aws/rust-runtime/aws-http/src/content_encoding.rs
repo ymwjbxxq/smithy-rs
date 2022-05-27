@@ -1,3 +1,8 @@
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
 use aws_smithy_checksums::body::ChecksumBody;
 use aws_smithy_http::body::SdkBody;
 
@@ -13,6 +18,12 @@ const CRLF: &str = "\r\n";
 const CHUNK_TERMINATOR: &str = "0\r\n";
 // https://docs.aws.amazon.com/AmazonS3/latest/API/sigv4-streaming.html
 const MINIMUM_CHUNK_LENGTH: usize = 1024 * 64;
+
+/// Content encoding header value constants
+pub mod header_value {
+    /// Header value denoting "aws-chunked" encoding
+    pub const AWS_CHUNKED: &str = "aws-chunked";
+}
 
 /// Options used when constructing an [`AwsChunkedBody`][AwsChunkedBody].
 #[derive(Debug, Default)]
@@ -66,9 +77,9 @@ impl AwsChunkedBodyOptions {
 pub struct AwsChunkedBody<InnerBody> {
     #[pin]
     inner: InnerBody,
-    #[pin]
     already_wrote_chunk_size_prefix: bool,
     already_wrote_chunk_terminator: bool,
+    already_wrote_trailers: bool,
     options: AwsChunkedBodyOptions,
 }
 
@@ -82,6 +93,7 @@ impl AwsChunkedBody<Inner> {
             inner: body,
             already_wrote_chunk_size_prefix: false,
             already_wrote_chunk_terminator: false,
+            already_wrote_trailers: false,
             options,
         }
     }
@@ -126,21 +138,104 @@ impl AwsChunkedBody<Inner> {
 
         Some(length)
     }
+}
 
-    fn poll_inner(
+fn prefix_with_total_chunk_size(data: Bytes, chunk_size: usize) -> Bytes {
+    // Len is the size of the entire chunk as defined in `AwsChunkedBodyOptions`
+    let mut prefixed_data = BytesMut::from(format!("{:X?}\r\n", chunk_size).as_bytes());
+    prefixed_data.extend_from_slice(&data);
+
+    prefixed_data.into()
+}
+
+fn get_unsigned_chunk_bytes_length(payload_length: usize) -> usize {
+    let hex_repr_len = int_log16(payload_length) as usize;
+    hex_repr_len + CRLF.len() + payload_length + CRLF.len()
+}
+
+fn trailers_as_aws_chunked_bytes(
+    total_length_of_trailers_in_bytes: usize,
+    trailer_map: Option<HeaderMap>,
+) -> Bytes {
+    use std::fmt::Write;
+
+    // TODO the capacity for this should be known, figure it out and use `BytesMut::with_capacity`
+    let mut trailers = String::with_capacity(total_length_of_trailers_in_bytes);
+    let mut already_wrote_first_trailer = false;
+
+    if let Some(trailer_map) = trailer_map {
+        for (header_name, header_value) in trailer_map.into_iter() {
+            match header_name {
+                // New name, new value
+                Some(header_name) => {
+                    if already_wrote_first_trailer {
+                        // First trailer shouldn't have a preceding CRLF, but every trailer after it should
+                        trailers.write_str(CRLF).unwrap();
+                    } else {
+                        already_wrote_first_trailer = true;
+                    }
+
+                    trailers.write_str(header_name.as_str()).unwrap();
+                    trailers.write_char(':').unwrap();
+                }
+                // Same name, new value
+                None => {
+                    trailers.write_char(',').unwrap();
+                }
+            }
+            trailers.write_str(header_value.to_str().unwrap()).unwrap();
+        }
+    }
+
+    // Write CRLF to end the body
+    trailers.write_str(CRLF).unwrap();
+    // If we wrote at least one trailer, we need to write an extra CRLF
+    if total_length_of_trailers_in_bytes != 0 {
+        trailers.write_str(CRLF).unwrap();
+    }
+
+    trailers.into()
+}
+
+impl Body for AwsChunkedBody<Inner> {
+    type Data = Bytes;
+    type Error = aws_smithy_http::body::Error;
+
+    fn poll_data(
         self: Pin<&mut Self>,
         cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<bytes::Bytes, aws_smithy_http::body::Error>>> {
-        let mut this = self.project();
-        let inner = this.inner;
+    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
+        tracing::info!("polling AwsChunkedBody");
+        let this = self.project();
+        if *this.already_wrote_trailers {
+            return Poll::Ready(None);
+        }
 
-        match inner.poll_data(cx) {
+        if *this.already_wrote_chunk_terminator {
+            return match this.inner.poll_trailers(cx) {
+                Poll::Ready(Ok(trailers)) => {
+                    *this.already_wrote_trailers = true;
+                    let total_length_of_trailers_in_bytes = this.options.trailer_lens.iter().sum();
+
+                    Poll::Ready(Some(Ok(trailers_as_aws_chunked_bytes(
+                        total_length_of_trailers_in_bytes,
+                        trailers,
+                    ))))
+                }
+                Poll::Pending => Poll::Pending,
+                Poll::Ready(Err(e)) => Poll::Ready(Some(Err(e))),
+            };
+        };
+
+        match this.inner.poll_data(cx) {
             Poll::Ready(Some(Ok(mut data))) => {
                 // A chunk must be prefixed by chunk size in hexadecimal
                 let bytes = if *this.already_wrote_chunk_size_prefix {
-                    let len = data.chunk().len();
-                    data.copy_to_bytes(len)
+                    tracing::info!("writing more of chunk");
+                    data.copy_to_bytes(data.len())
                 } else {
+                    tracing::info!("writing initial part of chunk");
+
                     *this.already_wrote_chunk_size_prefix = true;
                     let total_chunk_size = this
                         .options
@@ -153,53 +248,28 @@ impl AwsChunkedBody<Inner> {
                 Poll::Ready(Some(Ok(bytes)))
             }
             Poll::Ready(None) => {
-                if *this.already_wrote_chunk_terminator {
-                    Poll::Ready(None)
-                } else {
-                    *this.already_wrote_chunk_terminator = true;
-                    Poll::Ready(Some(Ok(Bytes::from("\r\n0\r\n"))))
-                }
+                tracing::info!("no more chunk data, writing terminator");
+                *this.already_wrote_chunk_terminator = true;
+                Poll::Ready(Some(Ok(Bytes::from("\r\n0\r\n"))))
             }
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
             Poll::Pending => Poll::Pending,
         }
     }
-}
-
-fn prefix_with_total_chunk_size(data: Bytes, chunk_size: usize) -> Bytes {
-    // Len is the size of the entire chunk as defined in `AwsChunkedBodyOptions`
-    let hex_chunk_size_prefix = format!("{:X?}\r\n", chunk_size);
-    let mut output = BytesMut::from(hex_chunk_size_prefix.as_str());
-    output.extend_from_slice(&data.chunk());
-
-    output.into()
-}
-
-fn get_unsigned_chunk_bytes_length(payload_length: usize) -> usize {
-    let hex_repr_len = int_log16(payload_length) as usize;
-    hex_repr_len + CRLF.len() + payload_length + CRLF.len()
-}
-
-impl http_body::Body for AwsChunkedBody<Inner> {
-    type Data = bytes::Bytes;
-    type Error = aws_smithy_http::body::Error;
-
-    fn poll_data(
-        self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
-    ) -> Poll<Option<Result<Self::Data, Self::Error>>> {
-        self.poll_inner(cx)
-    }
 
     fn poll_trailers(
         self: Pin<&mut Self>,
-        cx: &mut Context<'_>,
+        _cx: &mut Context<'_>,
     ) -> Poll<Result<Option<HeaderMap<HeaderValue>>, Self::Error>> {
-        self.project().inner.poll_trailers(cx)
+        // When using aws-chunked content encoding, trailers have to be appended to the body
+        Poll::Ready(Ok(None))
     }
 
     fn is_end_stream(&self) -> bool {
-        self.inner.is_end_stream()
+        // If we've written out the terminator, then we're done reading the body and can move on
+        // to the trailers.
+        // self.already_wrote_chunk_terminator
+        false
     }
 
     fn size_hint(&self) -> SizeHint {
@@ -213,7 +283,7 @@ impl http_body::Body for AwsChunkedBody<Inner> {
 
 fn int_log16<T>(mut i: T) -> u64
 where
-    T: std::ops::DivAssign + std::cmp::PartialOrd + From<u8> + Copy,
+    T: std::ops::DivAssign + PartialOrd + From<u8> + Copy,
 {
     let mut len = 0;
     let zero = T::from(0);
@@ -264,43 +334,24 @@ mod tests {
     use super::AwsChunkedBody;
     use crate::content_encoding::AwsChunkedBodyOptions;
     use aws_smithy_checksums::body::ChecksumBody;
-    use aws_smithy_checksums::SHA_256_HEADER_NAME;
     use aws_smithy_http::body::SdkBody;
     use bytes::Buf;
     use bytes_utils::SegmentedBuf;
-    use http::HeaderValue;
     use http_body::Body;
-    use std::fmt::Write;
     use std::io::Read;
-
-    fn str_to_aws_chunked_string(input: &str) -> String {
-        let mut string = String::new();
-        let chunk_size_prefix = format!("{:X?}", input.len());
-
-        // insert chunk size prefix, chunk terminator, CRLFs
-        write!(&mut string, "{}\r\n", chunk_size_prefix).unwrap();
-        write!(&mut string, "{}\r\n", input).unwrap();
-        write!(&mut string, "0\r\n").unwrap();
-        // Trailers would get written here, not sure how to handle that yet
-        // Skip writing final terminator for now since I don't know how to handle trailers
-        // write!(&mut string, "\r\n",).unwrap();
-
-        string
-    }
 
     #[tokio::test]
     async fn test_aws_chunked_encoded_body() {
         let input_text = "Hello world";
         let sdk_body = SdkBody::from(input_text);
         let checksum_body = ChecksumBody::new("sha256", sdk_body);
-        let expected_trailer = "x-amz-checksum-sha256:ZOyIygCyaOW6GjVnihtTFtIS9PNmskdyMlNKiuyjfzw=";
-
         let aws_chunked_body_options = AwsChunkedBodyOptions {
-            stream_length: Some(11),
+            stream_length: Some(input_text.len()),
             chunk_length: None,
-            trailer_lens: vec![expected_trailer.len()],
+            trailer_lens: vec![
+                "x-amz-checksum-sha256:ZOyIygCyaOW6GjVnihtTFtIS9PNmskdyMlNKiuyjfzw=".len(),
+            ],
         };
-
         let mut aws_chunked_body = AwsChunkedBody::new(checksum_body, aws_chunked_body_options);
 
         let mut output = SegmentedBuf::new();
@@ -308,28 +359,24 @@ mod tests {
             output.push(buf.unwrap());
         }
 
-        let chunk_formatted_input = str_to_aws_chunked_string(input_text);
-        let mut output_text = String::new();
+        let mut actual_output = String::new();
         output
             .reader()
-            .read_to_string(&mut output_text)
+            .read_to_string(&mut actual_output)
             .expect("Doesn't cause IO errors");
-        // Verify data is complete and unaltered
-        assert_eq!(chunk_formatted_input, output_text);
 
-        let trailers = aws_chunked_body
-            .trailers()
-            .await
-            .expect("checksum generation was without error")
-            .expect("trailers were set");
-        let checksum_trailer = trailers
-            .get(SHA_256_HEADER_NAME)
-            .expect("trailers contain sha256 checksum");
+        let expected_output = "B\r\nHello world\r\n0\r\nx-amz-checksum-sha256:ZOyIygCyaOW6GjVnihtTFtIS9PNmskdyMlNKiuyjfzw=\r\n\r\n";
 
-        // Known correct checksum for the input "Hello world"
-        assert_eq!(
-            HeaderValue::from_static("ZOyIygCyaOW6GjVnihtTFtIS9PNmskdyMlNKiuyjfzw="),
-            checksum_trailer
+        // Verify data is complete and correctly encoded
+        assert_eq!(expected_output, actual_output);
+
+        assert!(
+            aws_chunked_body
+                .trailers()
+                .await
+                .expect("checksum generation was without error")
+                .is_none(),
+            "aws-chunked encoded bodies don't have normal HTTP trailers"
         );
     }
 }

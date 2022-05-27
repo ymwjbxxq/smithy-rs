@@ -24,8 +24,7 @@ pub const CRC_32_C_HEADER_NAME: &str = "x-amz-checksum-crc32c";
 pub const SHA_1_HEADER_NAME: &str = "x-amz-checksum-sha1";
 pub const SHA_256_HEADER_NAME: &str = "x-amz-checksum-sha256";
 
-const WITH_OPTIONAL_WHITESPACE: bool = true;
-const TRAILER_SEPARATOR: &str = if WITH_OPTIONAL_WHITESPACE { ": " } else { ":" };
+const TRAILER_SEPARATOR: &str = ":";
 
 type BoxError = Box<dyn std::error::Error + Send + Sync>;
 
