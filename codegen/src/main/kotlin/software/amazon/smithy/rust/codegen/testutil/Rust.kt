@@ -56,7 +56,7 @@ private fun tempDir(directory: File? = null): File {
  */
 object TestWorkspace {
     private val baseDir =
-        System.getenv("SMITHY_TEST_WORKSPACE")?.let { File(it) } ?: tempDir()
+        System.getenv("SMITHY_TEST_WORKSPACE")?.let { File(it) } ?: System.getProperty("user.home")?.let { File(it, ".smithy-tests") } ?: tempDir()
     private val subprojects = mutableListOf<String>()
 
     init {
@@ -188,12 +188,7 @@ class TestWriterDelegator(private val fileManifest: FileManifest, symbolProvider
     }
 }
 
-/**
- * Setting `runClippy` to true can be helpful when debugging clippy failures, but
- * should generally be set to `false` to avoid invalidating the Cargo cache between
- * every unit test run.
- */
-fun TestWriterDelegator.compileAndTest(runClippy: Boolean = false) {
+fun TestWriterDelegator.generate() {
     val stubModel = """
         namespace fake
         service Fake {
@@ -206,6 +201,15 @@ fun TestWriterDelegator.compileAndTest(runClippy: Boolean = false) {
         manifestCustomizations = emptyMap(),
         libRsCustomizations = listOf(),
     )
+}
+
+/**
+ * Setting `runClippy` to true can be helpful when debugging clippy failures, but
+ * should generally be set to `false` to avoid invalidating the Cargo cache between
+ * every unit test run.
+ */
+fun TestWriterDelegator.compileAndTest(runClippy: Boolean = false) {
+    this.generate()
     println("Generated files:")
     printGeneratedFiles()
     try {

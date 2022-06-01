@@ -33,20 +33,32 @@ import software.amazon.smithy.rust.codegen.smithy.generators.client.FluentClient
 import software.amazon.smithy.rust.codegen.util.expectTrait
 import software.amazon.smithy.rustsdk.AwsRuntimeType.defaultMiddleware
 
-private class Types(runtimeConfig: RuntimeConfig) {
+class Types(runtimeConfig: RuntimeConfig) {
     private val smithyClientDep = CargoDependency.SmithyClient(runtimeConfig)
     private val smithyHttpDep = CargoDependency.SmithyHttp(runtimeConfig)
+    private val smithyHttpTowerDep = CargoDependency.SmithyHttpTower(runtimeConfig)
+    private val awsHttpDep = runtimeConfig.awsHttp()
+    private val awsSigAuthDep = runtimeConfig.awsRuntimeDependency("aws-sig-auth")
 
     val awsTypes = awsTypes(runtimeConfig).asType()
     val smithyClientRetry = RuntimeType("retry", smithyClientDep, "aws_smithy_client")
     val awsSmithyClient = smithyClientDep.asType()
+    val awsSmithyHttpTower = smithyHttpTowerDep.asType()
+    val awsHttp = awsHttpDep.asType()
+    val awsSigAuth = awsSigAuthDep.asType()
 
     val defaultMiddleware = runtimeConfig.defaultMiddleware()
     val dynConnector = RuntimeType("DynConnector", smithyClientDep, "aws_smithy_client::erase")
     val dynMiddleware = RuntimeType("DynMiddleware", smithyClientDep, "aws_smithy_client::erase")
     val smithyConnector = RuntimeType("SmithyConnector", smithyClientDep, "aws_smithy_client::bounds")
 
+    val mapRequest = awsSmithyHttpTower.member("map_request::MapRequestLayer")
+    val asyncMapRequest = awsSmithyHttpTower.member("map_request::AsyncMapRequestLayer")
+
     val connectorError = RuntimeType("ConnectorError", smithyHttpDep, "aws_smithy_http::result")
+
+    val serviceBuilder = CargoDependency.Tower.asType().member("ServiceBuilder")
+
 }
 
 private class AwsClientGenerics(private val types: Types) : FluentClientGenerics {
@@ -139,7 +151,7 @@ private class AwsFluentClientExtensions(types: Types) {
                     let sleep_impl = conf.sleep_impl.clone();
                     let mut builder = #{aws_smithy_client}::Builder::new()
                         .connector(#{DynConnector}::new(conn))
-                        .middleware(#{DynMiddleware}::new(#{Middleware}::new()));
+                        .middleware(#{Middleware}());
                     builder.set_retry_config(retry_config.into());
                     builder.set_timeout_config(timeout_config);
                     if let Some(sleep_impl) = sleep_impl {
@@ -162,7 +174,7 @@ private class AwsFluentClientExtensions(types: Types) {
                     let timeout_config = conf.timeout_config.as_ref().cloned().unwrap_or_default();
                     let sleep_impl = conf.sleep_impl.clone();
                     let mut builder = #{aws_smithy_client}::Builder::dyn_https()
-                        .middleware(#{DynMiddleware}::new(#{Middleware}::new()));
+                        .middleware(#{Middleware}());
                     builder.set_retry_config(retry_config.into());
                     builder.set_timeout_config(timeout_config);
                     // the builder maintains a try-state. To avoid suppressing the warning when sleep is unset,

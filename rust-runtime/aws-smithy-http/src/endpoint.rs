@@ -14,7 +14,7 @@ use crate::operation::BuildError;
 ///
 /// This implements an API endpoint as specified in the
 /// [Smithy Endpoint Specification](https://awslabs.github.io/smithy/1.0/spec/core/endpoint-traits.html)
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Endpoint {
     uri: http::Uri,
 

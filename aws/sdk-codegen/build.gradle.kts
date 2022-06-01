@@ -29,6 +29,9 @@ dependencies {
     implementation("software.amazon.smithy:smithy-aws-traits:$smithyVersion")
     testImplementation("org.junit.jupiter:junit-jupiter:5.6.1")
     testImplementation("io.kotest:kotest-assertions-core-jvm:$kotestVersion")
+    implementation(project(":codegen-endpoints"))
+    implementation("software.amazon.smithy:s3-rules:0.1.0")
+    implementation("software.amazon.smithy:smithy-aws-reterminus:0.1.0")
 }
 
 val generateAwsSdkVersion by tasks.registering {
@@ -46,12 +49,12 @@ val generateAwsSdkVersion by tasks.registering {
 }
 
 tasks.compileKotlin {
-    kotlinOptions.jvmTarget = "1.8"
+    kotlinOptions.jvmTarget = "17"
     dependsOn(generateAwsSdkVersion)
 }
 
 tasks.compileTestKotlin {
-    kotlinOptions.jvmTarget = "1.8"
+    kotlinOptions.jvmTarget = "17"
 }
 
 // Reusable license copySpec

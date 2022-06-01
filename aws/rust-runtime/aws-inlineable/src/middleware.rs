@@ -16,44 +16,14 @@ use aws_sig_auth::signer::SigV4Signer;
 use aws_smithy_http_tower::map_request::{AsyncMapRequestLayer, MapRequestLayer};
 use std::fmt::Debug;
 use tower::layer::util::{Identity, Stack};
-use tower::ServiceBuilder;
-
-type DefaultMiddlewareStack = Stack<
-    MapRequestLayer<RecursionDetectionStage>,
-    Stack<
-        MapRequestLayer<SigV4SigningStage>,
-        Stack<
-            AsyncMapRequestLayer<CredentialsStage>,
-            Stack<
-                MapRequestLayer<UserAgentStage>,
-                Stack<MapRequestLayer<AwsEndpointStage>, Identity>,
-            >,
-        >,
-    >,
->;
-
-/// AWS Middleware Stack
-///
-/// This implements the middleware stack for this service. It will:
-/// 1. Load credentials asynchronously into the property bag
-/// 2. Sign the request with SigV4
-/// 3. Resolve an Endpoint for the request
-/// 4. Add a user agent to the request
-#[derive(Debug, Default, Clone)]
-#[non_exhaustive]
-pub struct DefaultMiddleware;
-
-impl DefaultMiddleware {
-    /// Create a new `DefaultMiddleware` stack
-    ///
-    /// Note: `DefaultMiddleware` holds no state.
-    pub fn new() -> Self {
-        DefaultMiddleware::default()
-    }
-}
+use tower::{Layer, ServiceBuilder};
+use aws_smithy_client::bounds::SmithyConnector;
+use aws_smithy_client::erase::boxclone::BoxCloneService;
+use aws_smithy_client::erase::DynMiddleware;
+use aws_smithy_http_tower::dispatch::DispatchService;
 
 // define the middleware stack in a non-generic location to reduce code bloat.
-fn base() -> ServiceBuilder<DefaultMiddlewareStack> {
+pub fn middleware<C>() -> DynMiddleware<C> where C: SmithyConnector {
     let credential_provider = AsyncMapRequestLayer::for_mapper(CredentialsStage::new());
     let signer = MapRequestLayer::for_mapper(SigV4SigningStage::new(SigV4Signer::new()));
     let endpoint_resolver = MapRequestLayer::for_mapper(AwsEndpointStage);
@@ -65,18 +35,14 @@ fn base() -> ServiceBuilder<DefaultMiddlewareStack> {
     // 3. Acquire credentials
     // 4. Sign with credentials
     // (5. Dispatch over the wire)
-    ServiceBuilder::new()
+    DynMiddleware::new(ServiceBuilder::new()
         .layer(endpoint_resolver)
         .layer(user_agent)
         .layer(credential_provider)
         .layer(signer)
-        .layer(recursion_detection)
+        .layer(recursion_detection))
 }
 
-impl<S> tower::Layer<S> for DefaultMiddleware {
-    type Service = <DefaultMiddlewareStack as tower::Layer<S>>::Service;
-
-    fn layer(&self, inner: S) -> Self::Service {
-        base().service(inner)
-    }
+pub fn DefaultMiddleware<C>() -> DynMiddleware<C> where C: SmithyConnector {
+    middleware()
 }

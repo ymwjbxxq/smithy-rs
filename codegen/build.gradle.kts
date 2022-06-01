@@ -36,7 +36,7 @@ dependencies {
 }
 
 tasks.compileTestKotlin {
-    kotlinOptions.jvmTarget = "1.8"
+    kotlinOptions.jvmTarget = "17"
 }
 
 val generateSmithyRuntimeCrateVersion by tasks.registering {
@@ -54,7 +54,7 @@ val generateSmithyRuntimeCrateVersion by tasks.registering {
 }
 
 tasks.compileKotlin {
-    kotlinOptions.jvmTarget = "1.8"
+    kotlinOptions.jvmTarget = "17"
     dependsOn(generateSmithyRuntimeCrateVersion)
 }
 

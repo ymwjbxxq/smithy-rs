@@ -31,8 +31,8 @@ dependencies {
     testImplementation("io.kotest:kotest-assertions-core-jvm:$kotestVersion")
 }
 
-tasks.compileKotlin { kotlinOptions.jvmTarget = "1.8" }
-tasks.compileTestKotlin { kotlinOptions.jvmTarget = "1.8" }
+tasks.compileKotlin { kotlinOptions.jvmTarget = "17" }
+tasks.compileTestKotlin { kotlinOptions.jvmTarget = "17" }
 
 // Reusable license copySpec
 val licenseSpec = copySpec {

@@ -5,9 +5,13 @@
 
 package software.amazon.smithy.rustsdk.customize.s3
 
+import software.amazon.smithy.aws.reterminus.EndpointTestSuite
+import software.amazon.smithy.aws.s3.S3Rules
 import software.amazon.smithy.aws.traits.protocols.RestXmlTrait
+import software.amazon.smithy.model.node.Node
 import software.amazon.smithy.model.shapes.OperationShape
 import software.amazon.smithy.model.shapes.ShapeId
+import software.amazon.smithy.rust.codegen.endpoints.EndpointsGenerator
 import software.amazon.smithy.rust.codegen.rustlang.CargoDependency
 import software.amazon.smithy.rust.codegen.rustlang.RustModule
 import software.amazon.smithy.rust.codegen.rustlang.Writable
@@ -21,11 +25,15 @@ import software.amazon.smithy.rust.codegen.smithy.RuntimeType
 import software.amazon.smithy.rust.codegen.smithy.customize.RustCodegenDecorator
 import software.amazon.smithy.rust.codegen.smithy.generators.LibRsCustomization
 import software.amazon.smithy.rust.codegen.smithy.generators.LibRsSection
+import software.amazon.smithy.rust.codegen.smithy.generators.config.ConfigCustomization
 import software.amazon.smithy.rust.codegen.smithy.letIf
 import software.amazon.smithy.rust.codegen.smithy.protocols.ProtocolMap
 import software.amazon.smithy.rust.codegen.smithy.protocols.RestXml
 import software.amazon.smithy.rust.codegen.smithy.protocols.RestXmlFactory
+import software.amazon.smithy.rust.codegen.testutil.TestWorkspace
 import software.amazon.smithy.rustsdk.AwsRuntimeType
+import software.amazon.smithy.rustsdk.EndpointConfigCustomization
+import software.amazon.smithy.rustsdk.awsEndpoint
 
 /**
  * Top level decorator for S3
@@ -54,6 +62,40 @@ class S3Decorator : RustCodegenDecorator {
         return baseCustomizations.letIf(applies(codegenContext.serviceShape.id)) {
             it + S3PubUse()
         }
+    }
+
+    override fun configCustomizations(
+        codegenContext: CodegenContext,
+        baseCustomizations: List<ConfigCustomization>
+    ): List<ConfigCustomization> {
+        val removeDefaultEndpoint = baseCustomizations.filter { it !is EndpointConfigCustomization }
+        val rules = S3Rules().ruleset()
+        rules.typecheck()
+        val s3EndpointTests = EndpointTestSuite.fromNode(Node.parse(rules::class.java.getResource("/tests/s3-generated-tests.json").readText()))
+        val generator = EndpointsGenerator(S3Rules().ruleset(), listOf(s3EndpointTests), codegenContext.runtimeConfig)
+        val resolveAwsEndpoint = codegenContext.runtimeConfig.awsEndpoint().asType().member("ResolveAwsEndpointV2")
+        val awsEndpoint = codegenContext.runtimeConfig.awsEndpoint().asType().member("AwsEndpoint")
+        val s3EndpointResolver = RuntimeType.forInlineFun("Resolver", RustModule.public("endpoint_resolver")) { writer ->
+            writer.rustTemplate("""
+                struct Resolver;
+                impl #{ResolveAwsEndpointV2}<#{Params}> for Resolver {
+                    fn resolve_endpoint(&self, params: &{Params}) -> Result<{AwsEndpoint}, BoxError> {
+                        let uri = #{resolve_endpoint}(params)?;
+                        
+                        
+                    }
+                    
+                }
+                
+            """,
+                "Params" to generator.params(),
+                "ResolveAwsEndpointV2" to resolveAwsEndpoint,
+                "AwsEndpoint" to awsEndpoint
+            )
+
+        }
+        val resolver = EndpointConfigCustomization(codegenContext, s3EndpointResolver)
+        return removeDefaultEndpoint
     }
 }
 

@@ -6,6 +6,7 @@
 package software.amazon.smithy.rust.codegen.rustlang
 
 import org.intellij.lang.annotations.Language
+import org.jetbrains.annotations.Contract
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Element
 import software.amazon.smithy.codegen.core.CodegenException
@@ -297,6 +298,7 @@ fun RustWriter.raw(text: String) = writeInline(escape(text))
 
 typealias Writable = RustWriter.() -> Unit
 
+@Contract(pure = true)
 /** Helper to allow coercing the Writeable signature
  *  writable { rust("fn foo() { }")
  */

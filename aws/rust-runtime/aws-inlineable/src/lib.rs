@@ -18,6 +18,9 @@
     unreachable_pub
 )]
 
+/// ARN parsing
+pub mod endpoint;
+
 /// Stub credentials provider for use when no credentials provider is used.
 pub mod no_credentials;
 

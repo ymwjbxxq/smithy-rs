@@ -49,7 +49,7 @@ class AwsEndpointDecorator : RustCodegenDecorator {
         codegenContext: CodegenContext,
         baseCustomizations: List<ConfigCustomization>
     ): List<ConfigCustomization> {
-        return baseCustomizations + EndpointConfigCustomization(codegenContext, endpoints)
+        return baseCustomizations + EndpointConfigCustomization(codegenContext, EndpointResolverGenerator(codegenContext, endpoints).resolver())
     }
 
     override fun operationCustomizations(
@@ -68,7 +68,7 @@ class AwsEndpointDecorator : RustCodegenDecorator {
     }
 }
 
-class EndpointConfigCustomization(private val codegenContext: CodegenContext, private val endpointData: ObjectNode) :
+class EndpointConfigCustomization(codegenContext: CodegenContext, private val resolver: RuntimeType) :
     ConfigCustomization() {
     private val runtimeConfig = codegenContext.runtimeConfig
     private val resolveAwsEndpoint = runtimeConfig.awsEndpoint().asType().copy(name = "ResolveAwsEndpoint")
@@ -116,14 +116,13 @@ class EndpointConfigCustomization(private val codegenContext: CodegenContext, pr
                     "aws_types" to awsTypes(runtimeConfig).asType()
                 )
             ServiceConfig.BuilderBuild -> {
-                val resolverGenerator = EndpointResolverGenerator(codegenContext, endpointData)
                 rust(
                     """
                     endpoint_resolver: self.endpoint_resolver.unwrap_or_else(||
                         ::std::sync::Arc::new(#T())
                     ),
                     """,
-                    resolverGenerator.resolver(),
+                    resolver,
                 )
             }
         }

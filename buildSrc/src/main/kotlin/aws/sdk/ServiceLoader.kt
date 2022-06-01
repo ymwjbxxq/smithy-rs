@@ -60,6 +60,7 @@ fun Project.discoverServices(serviceMembership: Membership): AwsServices {
     val models = project.file("aws-models")
     val baseServices = fileTree(models)
         .sortedBy { file -> file.name }
+        .filter { file -> serviceMembership.considerFile(file) }
         .mapNotNull { file ->
             val model = Model.assembler().addImport(file.absolutePath).assemble().result.get()
             val services: List<ServiceShape> = model.shapes(ServiceShape::class.java).sorted().toList()
@@ -150,6 +151,8 @@ private fun Membership.isMember(member: String): Boolean = when {
     inclusions.isEmpty() -> true
     else -> false
 }
+
+private fun Membership.considerFile(file: File): Boolean = isMember(file.nameWithoutExtension)
 
 fun parseMembership(rawList: String): Membership {
     val inclusions = mutableSetOf<String>()
