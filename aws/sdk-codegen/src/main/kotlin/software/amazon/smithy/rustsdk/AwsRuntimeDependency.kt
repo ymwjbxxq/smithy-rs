@@ -7,10 +7,7 @@ package software.amazon.smithy.rustsdk
 
 import software.amazon.smithy.codegen.core.CodegenException
 import software.amazon.smithy.rust.codegen.rustlang.CargoDependency
-import software.amazon.smithy.rust.codegen.smithy.RuntimeConfig
-import software.amazon.smithy.rust.codegen.smithy.RuntimeCrateLocation
-import software.amazon.smithy.rust.codegen.smithy.RuntimeType
-import software.amazon.smithy.rust.codegen.smithy.crateLocation
+import software.amazon.smithy.rust.codegen.smithy.*
 import java.io.File
 import java.nio.file.Path
 
@@ -46,17 +43,7 @@ object AwsRuntimeType {
         RuntimeType.forInlineDependency(InlineAwsDependency.forRustFile("presigning", public = true))
     }
 
-    fun RuntimeConfig.defaultMiddleware() = RuntimeType.forInlineDependency(
-        InlineAwsDependency.forRustFile(
-            "middleware", public = true,
-            CargoDependency.SmithyHttp(this),
-            CargoDependency.SmithyHttpTower(this),
-            CargoDependency.SmithyClient(this),
-            CargoDependency.Tower,
-            awsHttp(),
-            awsEndpoint(),
-        )
-    ).member("DefaultMiddleware")
+    fun CodegenContext.defaultMiddleware(): RuntimeType = Middleware.forContext(this).middleware()
 }
 
 fun RuntimeConfig.awsRuntimeDependency(name: String, features: Set<String> = setOf()): CargoDependency =

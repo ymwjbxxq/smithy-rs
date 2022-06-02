@@ -30,7 +30,7 @@ pub(crate) fn is_valid_host_label(label: &str, allow_dots: bool) -> bool {
     if allow_dots {
         for part in label.split('.') {
             if !is_valid_host_label(part, false) {
-                return false
+                return false;
             }
         }
         true
@@ -38,10 +38,10 @@ pub(crate) fn is_valid_host_label(label: &str, allow_dots: bool) -> bool {
         if label.len() < 1 || label.len() > 63 {
             return false;
         }
-        if !label.starts_with(|c: char|c.is_alphabetic()) {
+        if !label.starts_with(|c: char| c.is_alphabetic()) {
             return false;
         }
-        if !label.chars().all(|c|c.is_alphanumeric() || c =='-') {
+        if !label.chars().all(|c| c.is_alphanumeric() || c == '-') {
             return false;
         }
         true
@@ -158,12 +158,15 @@ mod test {
     fn arn_parser() {
         let arn = "arn:aws:s3:us-east-2:012345678:outpost:op-1234";
         let parsed = Arn::parse(arn).expect("valid ARN");
-        assert_eq!(parsed, Arn {
-            partition: "aws",
-            service: "s3",
-            region: "us-east-2",
-            account_id: "012345678",
-            resource_id: vec!["outpost", "op-1234"]
-        });
+        assert_eq!(
+            parsed,
+            Arn {
+                partition: "aws",
+                service: "s3",
+                region: "us-east-2",
+                account_id: "012345678",
+                resource_id: vec!["outpost", "op-1234"]
+            }
+        );
     }
 }

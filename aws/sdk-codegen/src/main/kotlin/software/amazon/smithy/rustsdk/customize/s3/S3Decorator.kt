@@ -5,11 +5,14 @@
 
 package software.amazon.smithy.rustsdk.customize.s3
 
+import software.amazon.endpoints.s3.S3ModelTransform
+import software.amazon.endpoints.s3.S3Rules
 import software.amazon.smithy.aws.reterminus.EndpointTestSuite
-import software.amazon.smithy.aws.s3.S3Rules
 import software.amazon.smithy.aws.traits.protocols.RestXmlTrait
+import software.amazon.smithy.model.Model
 import software.amazon.smithy.model.node.Node
 import software.amazon.smithy.model.shapes.OperationShape
+import software.amazon.smithy.model.shapes.ServiceShape
 import software.amazon.smithy.model.shapes.ShapeId
 import software.amazon.smithy.rust.codegen.endpoints.EndpointsGenerator
 import software.amazon.smithy.rust.codegen.rustlang.CargoDependency
@@ -30,7 +33,6 @@ import software.amazon.smithy.rust.codegen.smithy.letIf
 import software.amazon.smithy.rust.codegen.smithy.protocols.ProtocolMap
 import software.amazon.smithy.rust.codegen.smithy.protocols.RestXml
 import software.amazon.smithy.rust.codegen.smithy.protocols.RestXmlFactory
-import software.amazon.smithy.rust.codegen.testutil.TestWorkspace
 import software.amazon.smithy.rustsdk.AwsRuntimeType
 import software.amazon.smithy.rustsdk.EndpointConfigCustomization
 import software.amazon.smithy.rustsdk.awsEndpoint
@@ -40,10 +42,13 @@ import software.amazon.smithy.rustsdk.awsEndpoint
  * */
 class S3Decorator : RustCodegenDecorator {
     override val name: String = "S3ExtendedError"
-    override val order: Byte = 0
+    override val order: Byte = -1
 
-    private fun applies(serviceId: ShapeId) =
-        serviceId == ShapeId.from("com.amazonaws.s3#AmazonS3")
+    override fun transformModel(service: ServiceShape, model: Model): Model {
+        return model.letIf(applies(service.id)) { s3 ->
+            S3ModelTransform().transform(s3)
+        }
+    }
 
     override fun protocols(serviceId: ShapeId, currentProtocols: ProtocolMap): ProtocolMap {
         return currentProtocols.letIf(applies(serviceId)) {
@@ -69,33 +74,48 @@ class S3Decorator : RustCodegenDecorator {
         baseCustomizations: List<ConfigCustomization>
     ): List<ConfigCustomization> {
         val removeDefaultEndpoint = baseCustomizations.filter { it !is EndpointConfigCustomization }
+        check(removeDefaultEndpoint.size != baseCustomizations.size, { baseCustomizations })
         val rules = S3Rules().ruleset()
         rules.typecheck()
         val s3EndpointTests = EndpointTestSuite.fromNode(Node.parse(rules::class.java.getResource("/tests/s3-generated-tests.json").readText()))
-        val generator = EndpointsGenerator(S3Rules().ruleset(), listOf(s3EndpointTests), codegenContext.runtimeConfig)
+        val generator = EndpointsGenerator(rules, listOf(s3EndpointTests), codegenContext.runtimeConfig)
         val resolveAwsEndpoint = codegenContext.runtimeConfig.awsEndpoint().asType().member("ResolveAwsEndpointV2")
         val awsEndpoint = codegenContext.runtimeConfig.awsEndpoint().asType().member("AwsEndpoint")
         val s3EndpointResolver = RuntimeType.forInlineFun("Resolver", RustModule.public("endpoint_resolver")) { writer ->
             writer.rustTemplate("""
-                struct Resolver;
+                pub(crate) struct Resolver;
                 impl #{ResolveAwsEndpointV2}<#{Params}> for Resolver {
-                    fn resolve_endpoint(&self, params: &{Params}) -> Result<{AwsEndpoint}, BoxError> {
+                    fn resolve_endpoint(&self, params: &#{Params}) -> Result<#{AwsEndpoint}, Box<dyn std::error::Error + Send + Sync>> {
                         let uri = #{resolve_endpoint}(params)?;
-                        
-                        
+                        Ok(#{AwsEndpoint}::new(uri, #{CredentialScope}::builder().build()))
                     }
                     
                 }
                 
             """,
                 "Params" to generator.params(),
+                "resolve_endpoint" to generator.resolver(),
                 "ResolveAwsEndpointV2" to resolveAwsEndpoint,
-                "AwsEndpoint" to awsEndpoint
+                "AwsEndpoint" to awsEndpoint,
+                "CredentialScope" to codegenContext.runtimeConfig.awsEndpoint().asType().member("CredentialScope")
             )
 
         }
         val resolver = EndpointConfigCustomization(codegenContext, s3EndpointResolver)
-        return removeDefaultEndpoint
+        return removeDefaultEndpoint + resolver
+    }
+
+    companion object {
+        private fun applies(serviceId: ShapeId) =
+            serviceId == ShapeId.from("com.amazonaws.s3#AmazonS3")
+        fun endpointsGenerator(ctx: CodegenContext): EndpointsGenerator? = if (applies(ctx.serviceShape.id)) {
+            val rules = S3Rules().ruleset()
+            rules.typecheck()
+            val s3EndpointTests = EndpointTestSuite.fromNode(Node.parse(rules::class.java.getResource("/tests/s3-generated-tests.json").readText()))
+            EndpointsGenerator(rules, listOf(s3EndpointTests), ctx.runtimeConfig)
+        } else {
+            null
+        }
     }
 }
 

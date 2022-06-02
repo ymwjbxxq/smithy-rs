@@ -144,7 +144,7 @@ class AwsInputPresignedMethod(
         "aws_sigv4" to runtimeConfig.awsRuntimeDependency("aws-sigv4").asType(),
         "sig_auth" to runtimeConfig.sigAuth().asType(),
         "tower" to CargoDependency.Tower.asType(),
-        "Middleware" to runtimeConfig.defaultMiddleware()
+        "Middleware" to codegenContext.defaultMiddleware()
     )
 
     override fun section(section: OperationSection): Writable = writable {
@@ -226,7 +226,7 @@ class AwsInputPresignedMethod(
             }
             rustTemplate(
                 """
-                let middleware = #{Middleware}::default();
+                let middleware = #{Middleware}();
                 let mut svc = #{tower}::builder::ServiceBuilder::new()
                     .layer(&middleware)
                     .service(#{PresignedRequestService}::new());

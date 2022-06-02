@@ -68,20 +68,21 @@ class AwsEndpointDecorator : RustCodegenDecorator {
     }
 }
 
-class EndpointConfigCustomization(codegenContext: CodegenContext, private val resolver: RuntimeType) :
+class EndpointConfigCustomization(codegenContext: CodegenContext, private val defaultResolver: RuntimeType) :
     ConfigCustomization() {
     private val runtimeConfig = codegenContext.runtimeConfig
-    private val resolveAwsEndpoint = runtimeConfig.awsEndpoint().asType().copy(name = "ResolveAwsEndpoint")
+    private val resolveAwsEndpoint = runtimeConfig.awsEndpoint().asType().copy(name = "ResolveAwsEndpointV2")
+    private val endpointParams = codegenContext.endpointsGenerator()
     private val moduleUseName = codegenContext.moduleUseName()
     override fun section(section: ServiceConfig): Writable = writable {
         when (section) {
             is ServiceConfig.ConfigStruct -> rust(
-                "pub (crate) endpoint_resolver: ::std::sync::Arc<dyn #T>,",
-                resolveAwsEndpoint
+                "pub (crate) endpoint_resolver: ::std::sync::Arc<dyn #T<#T>>,",
+                resolveAwsEndpoint, endpointParams
             )
             is ServiceConfig.ConfigImpl -> emptySection
             is ServiceConfig.BuilderStruct ->
-                rust("endpoint_resolver: Option<::std::sync::Arc<dyn #T>>,", resolveAwsEndpoint)
+                rust("endpoint_resolver: Option<::std::sync::Arc<dyn #T<#T>>>,", resolveAwsEndpoint, endpointParams)
             ServiceConfig.BuilderImpl ->
                 rustTemplate(
                     """
@@ -101,28 +102,29 @@ class EndpointConfigCustomization(codegenContext: CodegenContext, private val re
                     ///         Endpoint::immutable("http://localhost:8080".parse().expect("valid URI"))
                     ///     ).build();
                     /// ```
-                    pub fn endpoint_resolver(mut self, endpoint_resolver: impl #{ResolveAwsEndpoint} + 'static) -> Self {
+                    pub fn endpoint_resolver(mut self, endpoint_resolver: impl #{ResolveAwsEndpoint}<#{params}> + 'static) -> Self {
                         self.endpoint_resolver = Some(::std::sync::Arc::new(endpoint_resolver));
                         self
                     }
 
                     /// Sets the endpoint resolver to use when making requests.
-                    pub fn set_endpoint_resolver(&mut self, endpoint_resolver: Option<std::sync::Arc<dyn #{ResolveAwsEndpoint}>>) -> &mut Self {
+                    pub fn set_endpoint_resolver(&mut self, endpoint_resolver: Option<std::sync::Arc<dyn #{ResolveAwsEndpoint}<#{params}>>>) -> &mut Self {
                         self.endpoint_resolver = endpoint_resolver;
                         self
                     }
                     """,
                     "ResolveAwsEndpoint" to resolveAwsEndpoint,
-                    "aws_types" to awsTypes(runtimeConfig).asType()
+                    "aws_types" to awsTypes(runtimeConfig).asType(),
+                    "params" to endpointParams
                 )
             ServiceConfig.BuilderBuild -> {
                 rust(
                     """
                     endpoint_resolver: self.endpoint_resolver.unwrap_or_else(||
-                        ::std::sync::Arc::new(#T())
+                        ::std::sync::Arc::new(#T)
                     ),
                     """,
-                    resolver,
+                    defaultResolver,
                 )
             }
         }
@@ -138,7 +140,7 @@ class EndpointResolverFeature(private val runtimeConfig: RuntimeConfig, private 
             is OperationSection.MutateRequest -> writable {
                 rust(
                     """
-                    #T::set_endpoint_resolver(&mut ${section.request}.properties_mut(), ${section.config}.endpoint_resolver.clone());
+                    #T::set_endpoint_resolver_v2(&mut ${section.request}.properties_mut(), ${section.config}.endpoint_resolver.clone());
                     """,
                     runtimeConfig.awsEndpoint().asType()
                 )

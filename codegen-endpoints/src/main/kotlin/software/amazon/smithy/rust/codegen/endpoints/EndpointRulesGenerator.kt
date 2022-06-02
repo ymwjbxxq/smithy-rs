@@ -56,6 +56,7 @@ class EndpointsRulesGenerator(private val endpointsModel: EndpointRuleset, runti
         it.rustTemplate(
             """
             ##[non_exhaustive]
+            ##[derive(Debug, Eq, PartialEq, Clone)]
             pub struct Params {
                 #{params:W}
             }

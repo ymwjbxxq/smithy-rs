@@ -5,6 +5,7 @@
 
 #[doc(hidden)]
 pub mod partition;
+pub mod v2;
 
 #[doc(hidden)]
 pub use partition::Partition;
@@ -22,7 +23,7 @@ use std::fmt;
 use std::fmt::{Debug, Display, Formatter};
 use std::sync::Arc;
 
-pub use aws_types::endpoint::{AwsEndpoint, BoxError, CredentialScope, ResolveAwsEndpoint};
+pub use aws_types::endpoint::{AwsEndpoint, BoxError, CredentialScope, ResolveAwsEndpoint, ResolveAwsEndpointV2};
 
 type AwsEndpointResolver = Arc<dyn ResolveAwsEndpoint>;
 pub fn get_endpoint_resolver(properties: &PropertyBag) -> Option<&AwsEndpointResolver> {
@@ -30,6 +31,10 @@ pub fn get_endpoint_resolver(properties: &PropertyBag) -> Option<&AwsEndpointRes
 }
 
 pub fn set_endpoint_resolver(properties: &mut PropertyBag, provider: AwsEndpointResolver) {
+    properties.insert(provider);
+}
+
+pub fn set_endpoint_resolver_v2<T: 'static>(properties: &mut PropertyBag, provider: Arc<dyn ResolveAwsEndpointV2<T>>) {
     properties.insert(provider);
 }
 

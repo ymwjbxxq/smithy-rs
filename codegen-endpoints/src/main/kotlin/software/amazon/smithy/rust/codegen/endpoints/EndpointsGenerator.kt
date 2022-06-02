@@ -17,6 +17,9 @@ class EndpointsGenerator(
     private val generator = EndpointsRulesGenerator(rules, runtimeConfig)
 
     fun params() = generator.endpointParamStruct()
+
+    fun paramsBuilder() = generator.endpointParamsBuilder()
+    fun resolver() = generator.endpointResolver()
     fun generate(crate: RustCrate): RuntimeType {
         val generator = EndpointsRulesGenerator(rules, runtimeConfig)
         crate.lib {

@@ -44,13 +44,14 @@ class Types(runtimeConfig: RuntimeConfig) {
     val smithyClientRetry = RuntimeType("retry", smithyClientDep, "aws_smithy_client")
     val awsSmithyClient = smithyClientDep.asType()
     val awsSmithyHttpTower = smithyHttpTowerDep.asType()
-    val awsHttp = awsHttpDep.asType()
+    //val defaultMiddleware = ctx.defaultMiddleware()
+    val awsHttp: RuntimeType = awsHttpDep.asType()
     val awsSigAuth = awsSigAuthDep.asType()
 
-    val defaultMiddleware = runtimeConfig.defaultMiddleware()
     val dynConnector = RuntimeType("DynConnector", smithyClientDep, "aws_smithy_client::erase")
     val dynMiddleware = RuntimeType("DynMiddleware", smithyClientDep, "aws_smithy_client::erase")
     val smithyConnector = RuntimeType("SmithyConnector", smithyClientDep, "aws_smithy_client::bounds")
+    val smithyMiddleware = RuntimeType("SmithyMiddleware", smithyClientDep, "aws_smithy_client::bounds")
 
     val mapRequest = awsSmithyHttpTower.member("map_request::MapRequestLayer")
     val asyncMapRequest = awsSmithyHttpTower.member("map_request::AsyncMapRequestLayer")
@@ -58,6 +59,9 @@ class Types(runtimeConfig: RuntimeConfig) {
     val connectorError = RuntimeType("ConnectorError", smithyHttpDep, "aws_smithy_http::result")
 
     val serviceBuilder = CargoDependency.Tower.asType().member("ServiceBuilder")
+
+    val request = smithyHttpDep.asType().member("operation::Request")
+    val sendOperationError = awsSmithyHttpTower.member("SendOperationError")
 
 }
 
@@ -101,7 +105,7 @@ class AwsFluentClientDecorator : RustCodegenDecorator {
             )
         ).render(rustCrate)
         rustCrate.withModule(FluentClientGenerator.clientModule) { writer ->
-            AwsFluentClientExtensions(types).render(writer)
+            AwsFluentClientExtensions(types, codegenContext).render(writer)
         }
         val awsSmithyClient = "aws-smithy-client"
         rustCrate.mergeFeature(Feature("rustls", default = true, listOf("$awsSmithyClient/rustls")))
@@ -124,9 +128,9 @@ class AwsFluentClientDecorator : RustCodegenDecorator {
     }
 }
 
-private class AwsFluentClientExtensions(types: Types) {
+private class AwsFluentClientExtensions(types: Types, codegenContext: CodegenContext) {
     private val codegenScope = arrayOf(
-        "Middleware" to types.defaultMiddleware,
+        "middleware" to codegenContext.defaultMiddleware(),
         "retry" to types.smithyClientRetry,
         "DynConnector" to types.dynConnector,
         "DynMiddleware" to types.dynMiddleware,
@@ -151,7 +155,7 @@ private class AwsFluentClientExtensions(types: Types) {
                     let sleep_impl = conf.sleep_impl.clone();
                     let mut builder = #{aws_smithy_client}::Builder::new()
                         .connector(#{DynConnector}::new(conn))
-                        .middleware(#{Middleware}());
+                        .middleware(#{DynMiddleware}::new(#{middleware}()));
                     builder.set_retry_config(retry_config.into());
                     builder.set_timeout_config(timeout_config);
                     if let Some(sleep_impl) = sleep_impl {
@@ -174,7 +178,7 @@ private class AwsFluentClientExtensions(types: Types) {
                     let timeout_config = conf.timeout_config.as_ref().cloned().unwrap_or_default();
                     let sleep_impl = conf.sleep_impl.clone();
                     let mut builder = #{aws_smithy_client}::Builder::dyn_https()
-                        .middleware(#{Middleware}());
+                        .middleware(#{DynMiddleware}::new(#{middleware}()));
                     builder.set_retry_config(retry_config.into());
                     builder.set_timeout_config(timeout_config);
                     // the builder maintains a try-state. To avoid suppressing the warning when sleep is unset,

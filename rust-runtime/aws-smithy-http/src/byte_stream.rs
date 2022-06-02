@@ -548,15 +548,13 @@ impl Inner<SdkBody> {
 
 impl<B> futures_core::stream::Stream for Inner<B>
 where
-    B: http_body::Body<Data=Bytes>,
+    B: http_body::Body<Data = Bytes>,
 {
     type Item = Result<Bytes, B::Error>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         match self.project().body.poll_data(cx) {
-            Poll::Ready(Some(Ok(data))) => {
-                Poll::Ready(Some(Ok(data)))
-            }
+            Poll::Ready(Some(Ok(data))) => Poll::Ready(Some(Ok(data))),
             Poll::Ready(None) => Poll::Ready(None),
             Poll::Ready(Some(Err(e))) => Poll::Ready(Some(Err(e))),
             Poll::Pending => Poll::Pending,

@@ -86,9 +86,14 @@ pub trait ResolveAwsEndpoint: Send + Sync + Debug {
 }
 
 /// TODO
-pub trait ResolveAwsEndpointV2<T> {
+pub trait ResolveAwsEndpointV2<T>: Send + Sync {
     /// TODO
     fn resolve_endpoint(&self, params: &T) -> Result<AwsEndpoint, BoxError>;
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DefaultEndpointParams {
+    pub(crate) region: String,
 }
 
 /// The scope for AWS credentials.
