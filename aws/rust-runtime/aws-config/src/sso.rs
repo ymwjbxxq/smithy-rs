@@ -14,9 +14,8 @@ use crate::fs_util::{home_dir, Os};
 use crate::json_credentials::{json_parse_loop, InvalidJsonCredentials};
 use crate::provider_config::ProviderConfig;
 
-use aws_sdk_sso::middleware::DefaultMiddleware as SsoMiddleware;
 use aws_sdk_sso::model::RoleCredentials;
-use aws_smithy_client::erase::DynConnector;
+use aws_smithy_client::erase::{DynConnector, DynMiddleware};
 use aws_smithy_json::deserialize::Token;
 use aws_smithy_types::date_time::Format;
 use aws_smithy_types::DateTime;
@@ -37,12 +36,13 @@ use zeroize::Zeroizing;
 impl crate::provider_config::ProviderConfig {
     pub(crate) fn sso_client(
         &self,
-    ) -> aws_smithy_client::Client<aws_smithy_client::erase::DynConnector, SsoMiddleware> {
+    ) -> aws_smithy_client::Client {
         use crate::connector::expect_connector;
         use aws_smithy_client::http_connector::HttpSettings;
 
-        aws_smithy_client::Builder::<(), SsoMiddleware>::new()
+        aws_smithy_client::Builder::<(), ()>::new()
             .connector(expect_connector(self.connector(&HttpSettings::default())))
+            .middleware(aws_sdk_sso::middleware::dyn_middleware())
             .sleep_impl(self.sleep())
             .build()
     }
@@ -59,7 +59,7 @@ pub struct SsoCredentialsProvider {
     fs: Fs,
     env: Env,
     sso_config: SsoConfig,
-    client: aws_smithy_client::Client<DynConnector, SsoMiddleware>,
+    client: aws_smithy_client::Client,
 }
 
 impl SsoCredentialsProvider {
@@ -201,7 +201,7 @@ pub(crate) struct SsoConfig {
 
 async fn load_sso_credentials(
     sso_config: &SsoConfig,
-    sso: &aws_smithy_client::Client<DynConnector, SsoMiddleware>,
+    sso: &aws_smithy_client::Client,
     env: &Env,
     fs: &Fs,
 ) -> credentials::Result {

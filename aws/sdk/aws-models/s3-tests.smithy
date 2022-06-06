@@ -192,7 +192,7 @@ apply HeadObject @httpRequestTests([
 
         method: "HEAD",
         protocol: "aws.protocols#restXml",
-        uri: "/test-bucket/%3C%3E%20%60%3F%F0%9F%90%B1",
+        uri: "/%3C%3E%20%60%3F%F0%9F%90%B1",
         params: {
             Bucket: "test-bucket",
             Key: "<> `?🐱",

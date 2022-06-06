@@ -6,7 +6,6 @@
 //! Assume credentials for a role through the AWS Security Token Service (STS).
 
 use aws_sdk_sts::error::AssumeRoleErrorKind;
-use aws_sdk_sts::middleware::DefaultMiddleware;
 use aws_sdk_sts::operation::AssumeRole;
 use aws_smithy_client::erase::DynConnector;
 use aws_smithy_client::http_connector::HttpSettings;
@@ -48,7 +47,7 @@ pub struct AssumeRoleProvider {
 
 #[derive(Debug)]
 struct Inner {
-    sts: aws_smithy_client::Client<DynConnector, DefaultMiddleware>,
+    sts: aws_smithy_client::Client,
     conf: aws_sdk_sts::Config,
     op: aws_sdk_sts::input::AssumeRoleInput,
 }
@@ -176,7 +175,7 @@ impl AssumeRoleProviderBuilder {
             .expect("A connector must be provided");
         let client = aws_smithy_client::Builder::new()
             .connector(conn)
-            .middleware(DefaultMiddleware::new())
+            .middleware(aws_sdk_sts::middleware::dyn_middleware())
             .sleep_impl(conf.sleep())
             .build();
 

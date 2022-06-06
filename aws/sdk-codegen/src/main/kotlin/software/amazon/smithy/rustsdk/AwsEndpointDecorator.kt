@@ -5,12 +5,19 @@
 
 package software.amazon.smithy.rustsdk
 
+import software.amazon.smithy.aws.reterminus.Endpoint
+import software.amazon.smithy.aws.reterminus.EndpointRuleset
+import software.amazon.smithy.aws.reterminus.lang.expr.Expr
+import software.amazon.smithy.aws.reterminus.lang.parameters.Builtins
+import software.amazon.smithy.aws.reterminus.lang.parameters.Parameters
+import software.amazon.smithy.aws.reterminus.lang.rule.Rule
 import software.amazon.smithy.aws.traits.ServiceTrait
 import software.amazon.smithy.codegen.core.CodegenException
 import software.amazon.smithy.model.node.Node
 import software.amazon.smithy.model.node.ObjectNode
 import software.amazon.smithy.model.node.StringNode
 import software.amazon.smithy.model.shapes.OperationShape
+import software.amazon.smithy.rust.codegen.endpoints.EndpointsGenerator
 import software.amazon.smithy.rust.codegen.rustlang.CargoDependency
 import software.amazon.smithy.rust.codegen.rustlang.RustModule
 import software.amazon.smithy.rust.codegen.rustlang.RustWriter
@@ -49,7 +56,31 @@ class AwsEndpointDecorator : RustCodegenDecorator {
         codegenContext: CodegenContext,
         baseCustomizations: List<ConfigCustomization>
     ): List<ConfigCustomization> {
-        return baseCustomizations + EndpointConfigCustomization(codegenContext, EndpointResolverGenerator(codegenContext, endpoints).resolver())
+        val generator = codegenContext.endpointsGenerator()
+        val resolveAwsEndpoint = codegenContext.runtimeConfig.awsEndpoint().asType().member("ResolveAwsEndpointV2")
+        val awsEndpoint = codegenContext.runtimeConfig.awsEndpoint().asType().member("AwsEndpoint")
+        val endpointResolver = RuntimeType.forInlineFun("Resolver", RustModule.public("endpoint_resolver")) { writer ->
+            writer.rustTemplate("""
+                pub(crate) struct Resolver;
+                impl #{ResolveAwsEndpointV2}<#{Params}> for Resolver {
+                    fn resolve_endpoint(&self, params: &#{Params}) -> Result<#{AwsEndpoint}, Box<dyn std::error::Error + Send + Sync>> {
+                        dbg!(params);
+                        let uri = #{resolve_endpoint}(params)?;
+                        let region = #{Region}::new(params.region.clone().unwrap());
+                        Ok(#{AwsEndpoint}::new(uri, #{CredentialScope}::builder().region(region).build()))
+                    }
+                }
+            """,
+                "Params" to generator.paramsType(),
+                "resolve_endpoint" to generator.resolver(),
+                "ResolveAwsEndpointV2" to resolveAwsEndpoint,
+                "Region" to awsTypes(codegenContext.runtimeConfig).asType().member("region::Region"),
+                "AwsEndpoint" to awsEndpoint,
+                "CredentialScope" to codegenContext.runtimeConfig.awsEndpoint().asType().member("CredentialScope")
+            )
+
+        }
+        return baseCustomizations + EndpointConfigCustomization(codegenContext, endpointResolver)
     }
 
     override fun operationCustomizations(
@@ -68,21 +99,34 @@ class AwsEndpointDecorator : RustCodegenDecorator {
     }
 }
 
+fun defaultResolver(ctx: CodegenContext): EndpointsGenerator {
+    val endpointPrefix = ctx.serviceShape.expectTrait<ServiceTrait>().endpointPrefix
+    val rules = EndpointRuleset.builder().serviceId(ctx.serviceShape.id.toString())
+        .parameters(Parameters.builder().addParameter(Builtins.REGION)).rule(
+            Rule.builder().condition(Builtins.REGION.expr().isSet).endpoint(
+                Endpoint.builder().url(Expr.of("https://${endpointPrefix}.{Region}.amazonaws.com")).build()
+            )
+        ).build()
+    rules.typecheck()
+    return EndpointsGenerator(rules, listOf(), ctx.runtimeConfig)
+}
+
 class EndpointConfigCustomization(codegenContext: CodegenContext, private val defaultResolver: RuntimeType) :
     ConfigCustomization() {
     private val runtimeConfig = codegenContext.runtimeConfig
     private val resolveAwsEndpoint = runtimeConfig.awsEndpoint().asType().copy(name = "ResolveAwsEndpointV2")
-    private val endpointParams = codegenContext.endpointsGenerator()
+    private val endpointsGenerator = codegenContext.endpointsGenerator()
+    private val endpointsParams = endpointsGenerator.paramsType()
     private val moduleUseName = codegenContext.moduleUseName()
     override fun section(section: ServiceConfig): Writable = writable {
         when (section) {
             is ServiceConfig.ConfigStruct -> rust(
                 "pub (crate) endpoint_resolver: ::std::sync::Arc<dyn #T<#T>>,",
-                resolveAwsEndpoint, endpointParams
+                resolveAwsEndpoint, endpointsParams
             )
             is ServiceConfig.ConfigImpl -> emptySection
             is ServiceConfig.BuilderStruct ->
-                rust("endpoint_resolver: Option<::std::sync::Arc<dyn #T<#T>>>,", resolveAwsEndpoint, endpointParams)
+                rust("endpoint_resolver: Option<::std::sync::Arc<dyn #T<#T>>>,", resolveAwsEndpoint, endpointsParams)
             ServiceConfig.BuilderImpl ->
                 rustTemplate(
                     """
@@ -115,7 +159,7 @@ class EndpointConfigCustomization(codegenContext: CodegenContext, private val de
                     """,
                     "ResolveAwsEndpoint" to resolveAwsEndpoint,
                     "aws_types" to awsTypes(runtimeConfig).asType(),
-                    "params" to endpointParams
+                    "params" to endpointsParams
                 )
             ServiceConfig.BuilderBuild -> {
                 rust(

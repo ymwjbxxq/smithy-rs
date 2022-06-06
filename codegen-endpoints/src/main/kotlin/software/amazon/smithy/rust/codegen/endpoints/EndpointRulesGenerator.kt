@@ -37,8 +37,8 @@ class EndpointsRulesGenerator(private val endpointsModel: EndpointRuleset, runti
     )
 
     sealed class Ownership {
-        object Borrowed: Ownership()
-        object Owned: Ownership()
+        object Borrowed : Ownership()
+        object Owned : Ownership()
     }
 
     data class Context(val valueNumbering: Map<Expr, String>) {
@@ -60,7 +60,13 @@ class EndpointsRulesGenerator(private val endpointsModel: EndpointRuleset, runti
             pub struct Params {
                 #{params:W}
             }
-        """, "params" to params()
+            
+            impl Params {
+                pub fn builder() -> #{Builder} {
+                    #{Builder}::default()
+                }
+            }
+        """, "params" to params(), "Builder" to endpointParamsBuilder()
         )
     }
 
@@ -73,13 +79,18 @@ class EndpointsRulesGenerator(private val endpointsModel: EndpointRuleset, runti
 
         val implBlock = writable {
             endpointsModel.parameters.toList().forEach { parameter ->
-                rust(
+                rustTemplate(
                     """
-                    pub fn ${parameter.memberName()}(mut self, param: impl Into<#T>) -> Self {
+                    pub fn ${parameter.memberName()}(mut self, param: impl Into<#{param}>) -> Self {
                         self.${parameter.memberName()} = Some(param.into());
                         self
                     }
-                """, parameter.symbol().mapRustType { it.stripOuter<RustType.Option>() }
+                    
+                    pub fn set_${parameter.memberName()}(mut self, param: Option<impl Into<#{param}>>) -> Self {
+                        self.${parameter.memberName()} = param.map(|t|t.into());
+                        self
+                    }
+                """, "param" to parameter.symbol().mapRustType { it.stripOuter<RustType.Option>() }
                 )
             }
 
@@ -92,7 +103,7 @@ class EndpointsRulesGenerator(private val endpointsModel: EndpointRuleset, runti
             """, "Params" to endpointParamStruct(), "members" to writable {
                 endpointsModel.parameters.toList().forEach { parameter ->
                     val unwrap = if (parameter.isRequired) {
-                        ".unwrap()"
+                        ".unwrap_or_default()"
                     } else ""
                     rust("${parameter.memberName()}: self.${parameter.memberName()}$unwrap,")
                 }
@@ -235,8 +246,16 @@ class EndpointsRulesGenerator(private val endpointsModel: EndpointRuleset, runti
                 }
                 is Not -> rust("!#W", generateExpr(expr.target(), ctx, Ownership.Owned))
                 is IsSet -> rust("#W.is_some()", generateExpr(expr.target, ctx, Ownership.Borrowed))
-                is StringEquals -> rust("#W == #W", generateExpr(expr.left, ctx, Ownership.Borrowed), generateExpr(expr.right, ctx, Ownership.Borrowed))
-                is BooleanEquals -> rust("#W == #W", generateExpr(expr.left, ctx, Ownership.Owned), generateExpr(expr.right, ctx, Ownership.Owned))
+                is StringEquals -> rust(
+                    "#W == #W",
+                    generateExpr(expr.left, ctx, Ownership.Borrowed),
+                    generateExpr(expr.right, ctx, Ownership.Borrowed)
+                )
+                is BooleanEquals -> rust(
+                    "#W == #W",
+                    generateExpr(expr.left, ctx, Ownership.Owned),
+                    generateExpr(expr.right, ctx, Ownership.Owned)
+                )
                 is Literal -> {
                     when (expr.type()) {
                         is Type.Bool -> rust("${expr.source}")

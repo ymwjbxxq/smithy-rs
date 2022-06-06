@@ -39,6 +39,8 @@ val DECORATORS = listOf(
     SleepImplDecorator(),
     TimeoutConfigDecorator(),
 
+    EndpointParamsDecorator(),
+
     // Service specific decorators
     DisabledAuthDecorator(),
     ApiGatewayDecorator(),

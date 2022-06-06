@@ -24,10 +24,9 @@ class Middleware(private val runtimeConfig: RuntimeConfig, private val layers: L
                         #{layers:W}
             }
             
-            /*pub(crate) fn dyn_middleware<C>() -> impl {SmithyMiddleware}<C> {
-                    #{ServiceBuilder}::new()
-                        #{layers:W}
-            }*/
+            pub fn dyn_middleware<C: #{SmithyConnector}>() -> #{DynMiddleware}<C> {
+                #{DynMiddleware}::new(middleware())
+            }
         """,
             "SmithyConnector" to types.smithyConnector,
             "SmithyMiddleware" to types.smithyMiddleware,
@@ -36,6 +35,7 @@ class Middleware(private val runtimeConfig: RuntimeConfig, private val layers: L
             "SendOperationError" to types.sendOperationError,
             "Service" to CargoDependency.Tower.asType().member("Service"),
             "Layer" to CargoDependency.Tower.asType().member("Layer"),
+            "DynMiddleware" to types.dynMiddleware,
             "layers" to layers()
         )
     }
@@ -49,15 +49,15 @@ class Middleware(private val runtimeConfig: RuntimeConfig, private val layers: L
     companion object {
         fun forContext(ctx: CodegenContext): Middleware {
             val layers = Layers(ctx.runtimeConfig)
-            val params = ctx.endpointsGenerator().params()
-            return Middleware(ctx.runtimeConfig, layers.defaultLayers + layers.endpointParams(params))
+            val params = ctx.endpointsGenerator().paramsType()
+            return Middleware(ctx.runtimeConfig,  listOf(layers.endpointParams(params)) + layers.defaultLayers )
         }
     }
 }
 
-fun CodegenContext.endpointsGenerator(): EndpointsGenerator = S3Decorator.endpointsGenerator(this) ?: EndpointsGenerator.default()
+fun CodegenContext.endpointsGenerator(): EndpointsGenerator = S3Decorator.endpointsGenerator(this) ?: defaultResolver(this)
 
-class Layers(private val runtimeConfig: RuntimeConfig) {
+class Layers(runtimeConfig: RuntimeConfig) {
     private val types = Types(runtimeConfig)
     private val scope = arrayOf(
         "MapRequestLayer" to types.mapRequest,

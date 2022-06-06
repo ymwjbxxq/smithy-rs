@@ -69,10 +69,14 @@ class S3Decorator : RustCodegenDecorator {
         }
     }
 
+    /*
     override fun configCustomizations(
         codegenContext: CodegenContext,
         baseCustomizations: List<ConfigCustomization>
     ): List<ConfigCustomization> {
+        if (!applies(codegenContext.serviceShape.id)) {
+            return baseCustomizations
+        }
         val removeDefaultEndpoint = baseCustomizations.filter { it !is EndpointConfigCustomization }
         check(removeDefaultEndpoint.size != baseCustomizations.size, { baseCustomizations })
         val rules = S3Rules().ruleset()
@@ -93,7 +97,7 @@ class S3Decorator : RustCodegenDecorator {
                 }
                 
             """,
-                "Params" to generator.params(),
+                "Params" to generator.paramsType(),
                 "resolve_endpoint" to generator.resolver(),
                 "ResolveAwsEndpointV2" to resolveAwsEndpoint,
                 "AwsEndpoint" to awsEndpoint,
@@ -103,7 +107,7 @@ class S3Decorator : RustCodegenDecorator {
         }
         val resolver = EndpointConfigCustomization(codegenContext, s3EndpointResolver)
         return removeDefaultEndpoint + resolver
-    }
+    }*/
 
     companion object {
         private fun applies(serviceId: ShapeId) =
