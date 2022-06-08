@@ -153,6 +153,11 @@ impl SdkBody {
     pub fn content_length(&self) -> Option<u64> {
         self.size_hint().exact()
     }
+
+    pub fn map<T: Fn(SdkBody) -> SdkBody>(self, map_fn: T) -> Self {
+        // TODO handle retry behavior
+        map_fn(self)
+    }
 }
 
 impl From<&str> for SdkBody {

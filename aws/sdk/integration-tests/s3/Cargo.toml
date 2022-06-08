@@ -19,7 +19,7 @@ aws-smithy-protocol-test = { path = "../../build/aws-sdk/sdk/aws-smithy-protocol
 aws-smithy-types = { path = "../../build/aws-sdk/sdk/aws-smithy-types" }
 bytes = "1"
 bytes-utils = "0.1.2"
-http = "0.2.3"
+http = "0.2.8"
 http-body = "0.4.5"
 serde_json = "1"
 tokio = { version = "1", features = ["full", "test-util"] }
