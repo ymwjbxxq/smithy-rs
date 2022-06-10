@@ -23,6 +23,7 @@ aws-types = { path = "../../rust-runtime/aws-types" }
 aws-sig-auth = { path = "../../rust-runtime/aws-sig-auth" }
 http = "0.2.4"
 http-body = "0.4.5"
+md-5 = "0.10.1"
 tower = { version = "0.4", default-features = false }
 
 # Checksum dependencies:

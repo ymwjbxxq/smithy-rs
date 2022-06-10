@@ -7,6 +7,7 @@ use crate::{new_checksum, Checksum};
 
 use aws_smithy_http::body::SdkBody;
 use aws_smithy_http::header::append_merge_header_maps;
+use aws_smithy_types::base64;
 
 use bytes::{Buf, Bytes};
 use http::header::HeaderName;
@@ -18,6 +19,8 @@ use std::fmt::Display;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
+/// A `ChecksumBody` will read and calculate a request body as it's being sent. Once the body has
+/// been completely read, it'll append a trailer with the calculated checksum.
 #[pin_project]
 pub struct ChecksumBody<InnerBody> {
     #[pin]
@@ -27,19 +30,41 @@ pub struct ChecksumBody<InnerBody> {
 }
 
 impl ChecksumBody<SdkBody> {
-    pub fn new(checksum_algorithm: &str, body: SdkBody) -> Self {
+    /// Given an `SdkBody` and the name of a checksum algorithm as a `&str`, create a new
+    /// `ChecksumBody<SdkBody>`. Valid checksum algorithm names are defined in this crate's
+    /// [root module](super).
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the given checksum algorithm is not supported.
+    pub fn new(body: SdkBody, checksum_algorithm: &str) -> Self {
         Self {
             checksum: new_checksum(checksum_algorithm),
             inner: body,
         }
     }
 
+    /// Return the name of the trailer that will be emitted by this `ChecksumBody`
     pub fn trailer_name(&self) -> HeaderName {
         self.checksum.header_name()
     }
 
+    /// Calculate and return the sum of the:
+    /// - checksum when base64 encoded
+    /// - trailer name
+    /// - trailer separator
+    ///
+    /// This is necessary for calculating the true size of the request body for certain
+    /// content-encodings.
     pub fn trailer_length(&self) -> u64 {
-        self.checksum.checksum_header_size()
+        let trailer_name_size_in_bytes = self.checksum.header_name().as_str().len() as u64;
+        let base64_encoded_checksum_size_in_bytes = base64::encoded_length(self.checksum.size());
+
+        (trailer_name_size_in_bytes
+            // HTTP trailer names and values may be separated by either a single colon or a single
+            // colon and a whitespace. In the AWS Rust SDK, we use a single colon.
+            + ":".len() as u64
+            + base64_encoded_checksum_size_in_bytes)
     }
 
     fn poll_inner(
@@ -134,6 +159,9 @@ impl http_body::Body for ChecksumBody<SdkBody> {
     }
 }
 
+/// A response body that will calculate a checksum as it is read. If all data is read and the
+/// calculated checksum doesn't match a precalculated checksum, this body will emit an
+/// [asw_smithy_http::body::Error].
 #[pin_project]
 pub struct ChecksumValidatedBody<InnerBody> {
     #[pin]
@@ -144,6 +172,13 @@ pub struct ChecksumValidatedBody<InnerBody> {
 }
 
 impl ChecksumValidatedBody<SdkBody> {
+    /// Given an `SdkBody`, the name of a checksum algorithm as a `&str`, and a precalculated
+    /// checksum represented as `Bytes`, create a new `ChecksumValidatedBody<SdkBody>`.
+    /// Valid checksum algorithm names are defined in this crate's [root module](super).
+    ///
+    /// # Panics
+    ///
+    /// This will panic if the given checksum algorithm is not supported.
     pub fn new(body: SdkBody, checksum_algorithm: &str, precalculated_checksum: Bytes) -> Self {
         Self {
             checksum: new_checksum(checksum_algorithm),
@@ -174,7 +209,14 @@ impl ChecksumValidatedBody<SdkBody> {
             // Once the inner body has stopped returning data, check the checksum
             // and return an error if it doesn't match.
             Poll::Ready(None) => {
-                let actual_checksum = checksum.finalize();
+                let actual_checksum = {
+                    match checksum.finalize() {
+                        Ok(checksum) => checksum,
+                        Err(err) => {
+                            return Poll::Ready(Some(Err(err)));
+                        }
+                    }
+                };
                 if *this.precalculated_checksum == actual_checksum {
                     Poll::Ready(None)
                 } else {
@@ -191,14 +233,19 @@ impl ChecksumValidatedBody<SdkBody> {
     }
 }
 
+/// Errors related to checksum calculation and validation
 #[derive(Debug, Eq, PartialEq)]
 #[non_exhaustive]
 pub enum Error {
+    /// The actual checksum didn't match the expected checksum. The checksummed data has been
+    /// altered since the expected checksum was calculated.
     ChecksumMismatch { expected: Bytes, actual: Bytes },
 }
 
 impl Error {
-    fn checksum_mismatch(expected: Bytes, actual: Bytes) -> Self {
+    /// Given an expected checksum and an actual checksum in `Bytes` form, create a new
+    /// `Error::ChecksumMismatch`.
+    pub fn checksum_mismatch(expected: Bytes, actual: Bytes) -> Self {
         Self::ChecksumMismatch { expected, actual }
     }
 }
@@ -274,7 +321,7 @@ mod tests {
     async fn test_checksum_body() {
         let input_text = "This is some test text for an SdkBody";
         let body = SdkBody::from(input_text);
-        let mut body = ChecksumBody::new("crc32", body);
+        let mut body = ChecksumBody::new(body, "crc32");
 
         let mut output = SegmentedBuf::new();
         while let Some(buf) = body.data().await {
@@ -359,7 +406,7 @@ mod tests {
     #[test]
     fn test_trailer_length_of_crc32_checksum_body() {
         let input_text = "Hello world";
-        let body = ChecksumBody::new(CRC_32_NAME, SdkBody::from(input_text));
+        let body = ChecksumBody::new(SdkBody::from(input_text), CRC_32_NAME);
         let expected_size = 29;
         let actual_size = body.trailer_length();
         assert_eq!(expected_size, actual_size)
@@ -368,7 +415,7 @@ mod tests {
     #[test]
     fn test_trailer_length_of_crc32c_checksum_body() {
         let input_text = "Hello world";
-        let body = ChecksumBody::new(CRC_32_C_NAME, SdkBody::from(input_text));
+        let body = ChecksumBody::new(SdkBody::from(input_text), CRC_32_C_NAME);
         let expected_size = 30;
         let actual_size = body.trailer_length();
         assert_eq!(expected_size, actual_size)
@@ -377,7 +424,7 @@ mod tests {
     #[test]
     fn test_trailer_length_of_sha1_checksum_body() {
         let input_text = "Hello world";
-        let body = ChecksumBody::new(SHA_1_NAME, SdkBody::from(input_text));
+        let body = ChecksumBody::new(SdkBody::from(input_text), SHA_1_NAME);
         let expected_size = 48;
         let actual_size = body.trailer_length();
         assert_eq!(expected_size, actual_size)
@@ -386,7 +433,7 @@ mod tests {
     #[test]
     fn test_trailer_length_of_sha256_checksum_body() {
         let input_text = "Hello world";
-        let body = ChecksumBody::new(SHA_256_NAME, SdkBody::from(input_text));
+        let body = ChecksumBody::new(SdkBody::from(input_text), SHA_256_NAME);
         let expected_size = 66;
         let actual_size = body.trailer_length();
         assert_eq!(expected_size, actual_size)

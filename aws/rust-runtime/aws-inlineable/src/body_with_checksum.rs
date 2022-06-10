@@ -1,33 +1,52 @@
-// use aws_http::content_encoding::{
-//     header_value::AWS_CHUNKED, AwsChunkedBody, AwsChunkedBodyOptions,
-// };
-// use aws_smithy_checksums::body::{ChecksumBody, ChecksumValidatedBody};
-// use aws_smithy_checksums::{
-//     checksum_header_name_to_checksum_algorithm, CHECKSUM_HEADERS_IN_PRIORITY_ORDER,
-// };
-// use aws_smithy_http::body::SdkBody;
-// use bytes::Bytes;
-// use http::request::{self, Request};
-// use http_body::Body;
+/*
+ * Copyright Amazon.com, Inc. or its affiliates. All Rights Reserved.
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+/// Given a `&mut http::request::Request`, and checksum algorithm name, calculate a checksum and
+/// then modify the request to include the checksum as a header.
+pub fn build_checksum_validated_request(
+    request: &mut http::request::Request<aws_smithy_http::body::SdkBody>,
+    checksum_algorithm: &str,
+) -> Result<(), aws_smithy_http::operation::BuildError> {
+    let data = request.body().bytes().unwrap_or_default();
+
+    let mut checksum = aws_smithy_checksums::new_checksum(checksum_algorithm);
+    checksum
+        .update(data)
+        .map_err(|err| aws_smithy_http::operation::BuildError::Other(err))?;
+    let checksum = checksum
+        .finalize()
+        .map_err(|err| aws_smithy_http::operation::BuildError::Other(err))?;
+
+    request.headers_mut().insert(
+        aws_smithy_checksums::checksum_algorithm_to_checksum_header_name(checksum_algorithm),
+        aws_smithy_types::base64::encode(&checksum[..])
+            .parse()
+            .expect("base64-encoded checksums are always valid header values"),
+    );
+
+    Ok(())
+}
 
 /// Given an `http::request::Builder`, `SdkBody`, and a checksum algorithm name, return a
 /// `Request<SdkBody>` with checksum trailers where the content is `aws-chunked` encoded.
-pub fn build_checksum_validated_request(
+pub fn build_checksum_validated_request_with_streaming_body(
     request_builder: http::request::Builder,
     body: aws_smithy_http::body::SdkBody,
     checksum_algorithm: &str,
-) -> http::Request<aws_smithy_http::body::SdkBody> {
+) -> Result<http::Request<aws_smithy_http::body::SdkBody>, aws_smithy_http::operation::BuildError> {
     use http_body::Body;
 
     let original_body_size = body
         .size_hint()
         .exact()
         .expect("body must be sized if checksum is requested");
-    let body = aws_smithy_checksums::body::ChecksumBody::new(checksum_algorithm, body);
+    let body = aws_smithy_checksums::body::ChecksumBody::new(body, checksum_algorithm);
     let checksum_trailer_name = body.trailer_name();
     let aws_chunked_body_options = aws_http::content_encoding::AwsChunkedBodyOptions::new()
-        .with_stream_length(original_body_size as usize)
-        .with_trailer_len(body.trailer_length() as usize);
+        .with_stream_length(original_body_size)
+        .with_trailer_len(body.trailer_length());
 
     let body = aws_http::content_encoding::AwsChunkedBody::new(body, aws_chunked_body_options);
     let encoded_content_length = body
@@ -54,7 +73,9 @@ pub fn build_checksum_validated_request(
 
     let body = aws_smithy_http::body::SdkBody::from_dyn(http_body::combinators::BoxBody::new(body));
 
-    request_builder.body(body).expect("should be valid request")
+    request_builder
+        .body(body)
+        .map_err(|err| aws_smithy_http::operation::BuildError::Other(Box::new(err)))
 }
 
 /// Given a `Response<SdkBody>`, checksum algorithm name, and pre-calculated checksum, return a
@@ -91,11 +112,3 @@ pub fn check_headers_for_precalculated_checksum(
 
     None
 }
-
-// pub fn deser_payload_get_object_get_object_output_body(
-//     body: &mut aws_smithy_http::body::SdkBody,
-// ) -> std::result::Result<aws_smithy_http::byte_stream::ByteStream, crate::error::GetObjectError> {
-//     // replace the body with an empty body
-//     let body = std::mem::replace(body, aws_smithy_http::body::SdkBody::taken());
-//     Ok(aws_smithy_http::byte_stream::ByteStream::new(body))
-// }

@@ -13,23 +13,23 @@ use http::HeaderValue;
 use std::io::Read;
 use std::time::{Duration, UNIX_EPOCH};
 
-// // Use this test to run a real request against S3 to prove that things work
-// #[tokio::test]
-// async fn test_checksum_on_streaming_request_against_s3() {
-//     let sdk_config = aws_config::from_env().load().await;
-//     let s3_client = aws_sdk_s3::Client::new(&sdk_config);
-//
-//     let input_text = b"Hello world";
-//     let _res = s3_client
-//         .put_object()
-//         .bucket("some-real-bucket")
-//         .key("test.txt")
-//         .body(aws_sdk_s3::types::ByteStream::from_static(input_text))
-//         .checksum_algorithm(ChecksumAlgorithm::Sha256)
-//         .send()
-//         .await
-//         .unwrap();
-// }
+// Use this test to run a real request against S3 to prove that things work
+#[tokio::test]
+async fn test_checksum_on_streaming_request_against_s3() {
+    let sdk_config = aws_config::from_env().load().await;
+    let s3_client = aws_sdk_s3::Client::new(&sdk_config);
+
+    let input_text = b"";
+    let _res = s3_client
+        .put_object()
+        .bucket("telephone-game")
+        .key("test.txt")
+        .body(aws_sdk_s3::types::ByteStream::from_static(input_text))
+        .checksum_algorithm(ChecksumAlgorithm::Sha256)
+        .send()
+        .await
+        .unwrap();
+}
 //
 // #[tokio::test]
 // async fn test_checksum_on_streaming_response() {

@@ -37,4 +37,4 @@ pub mod middleware;
 pub mod hosted_zone_preprocessor;
 
 /// Convert a streaming `SdkBody` into an aws-chunked streaming body with checksum trailers
-pub mod streaming_body_with_checksum;
+pub mod body_with_checksum;
