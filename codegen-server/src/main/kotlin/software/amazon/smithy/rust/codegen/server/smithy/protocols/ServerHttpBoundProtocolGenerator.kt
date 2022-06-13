@@ -505,13 +505,10 @@ private class ServerHttpBoundProtocolTraitImplGenerator(
         // Fallback to the default code of `http::response::Builder`, 200.
 
         operationShape.outputShape(model).findStreamingMember(model)?.let {
-            val memberName = symbolProvider.toMemberName(it)
-            rustTemplate(
-                """
-                let body = #{SmithyHttpServer}::body::to_boxed(#{SmithyHttpServer}::body::Body::wrap_stream(output.$memberName));
-                """,
-                *codegenScope,
-            )
+            val payloadGenerator = HttpBoundProtocolPayloadGenerator(codegenContext, protocol, httpMessageType = HttpMessageType.RESPONSE)
+            withBlockTemplate("let body = #{SmithyHttpServer}::body::boxed(#{SmithyHttpServer}::body::Body::wrap_stream(", "));", *codegenScope) {
+                payloadGenerator.generatePayload(this, "output", operationShape)
+            }
         } ?: run {
             val payloadGenerator = HttpBoundProtocolPayloadGenerator(codegenContext, protocol, httpMessageType = HttpMessageType.RESPONSE)
             withBlockTemplate("let body = #{SmithyHttpServer}::body::to_boxed(", ");", *codegenScope) {
@@ -682,29 +679,29 @@ private class ServerHttpBoundProtocolTraitImplGenerator(
             HttpLocation.HEADER -> writable { serverRenderHeaderParser(this, binding, operationShape) }
             HttpLocation.PREFIX_HEADERS -> writable { serverRenderPrefixHeadersParser(this, binding, operationShape) }
             HttpLocation.PAYLOAD -> {
-                return if (binding.member.isStreaming(model)) {
-                    writable {
+                val structureShapeHandler: RustWriter.(String) -> Unit = { body ->
+                    rust("#T($body)", structuredDataParser.payloadParser(binding.member))
+                }
+                val errorSymbol = getDeserializePayloadErrorSymbol(binding)
+                val deserializer = httpBindingGenerator.generateDeserializePayloadFn(
+                    binding,
+                    errorSymbol,
+                    structuredHandler = structureShapeHandler
+                )
+                return writable {
+                    if (binding.member.isStreaming(model)) {
                         rustTemplate(
                             """
                             {
                                 let body = request.take_body().ok_or(#{RequestRejection}::BodyAlreadyExtracted)?;
-                                Some(body.into())
+                                let bytes = #{Hyper}::body::to_bytes(body).await?;
+                                Some(#{Deserializer}(&mut bytes.into())?)
                             }
-                            """.trimIndent(),
+                            """,
+                            "Deserializer" to deserializer,
                             *codegenScope
                         )
-                    }
-                } else {
-                    val structureShapeHandler: RustWriter.(String) -> Unit = { body ->
-                        rust("#T($body)", structuredDataParser.payloadParser(binding.member))
-                    }
-                    val errorSymbol = getDeserializePayloadErrorSymbol(binding)
-                    val deserializer = httpBindingGenerator.generateDeserializePayloadFn(
-                        binding,
-                        errorSymbol,
-                        structuredHandler = structureShapeHandler
-                    )
-                    writable {
+                    } else {
                         rustTemplate(
                             """
                             {

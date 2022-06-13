@@ -25,6 +25,7 @@ import software.amazon.smithy.rust.codegen.rustlang.withBlock
 import software.amazon.smithy.rust.codegen.rustlang.withBlockTemplate
 import software.amazon.smithy.rust.codegen.smithy.CodegenContext
 import software.amazon.smithy.rust.codegen.smithy.RuntimeType
+import software.amazon.smithy.rust.codegen.smithy.generators.CodegenTarget
 import software.amazon.smithy.rust.codegen.smithy.generators.error.errorSymbol
 import software.amazon.smithy.rust.codegen.smithy.generators.http.HttpMessageType
 import software.amazon.smithy.rust.codegen.smithy.generators.operationBuildError
@@ -39,6 +40,7 @@ import software.amazon.smithy.rust.codegen.util.hasTrait
 import software.amazon.smithy.rust.codegen.util.inputShape
 import software.amazon.smithy.rust.codegen.util.isEventStream
 import software.amazon.smithy.rust.codegen.util.isInputEventStream
+import software.amazon.smithy.rust.codegen.util.isOutputEventStream
 import software.amazon.smithy.rust.codegen.util.isStreaming
 import software.amazon.smithy.rust.codegen.util.outputShape
 import software.amazon.smithy.rust.codegen.util.toSnakeCase
@@ -56,13 +58,15 @@ class HttpBoundProtocolPayloadGenerator(
 
     private val operationSerModule = RustModule.private("operation_ser")
 
+    private val smithyEventStream = CargoDependency.SmithyEventStream(runtimeConfig)
     private val codegenScope = arrayOf(
         "hyper" to CargoDependency.HyperWithStream.asType(),
         "ByteStream" to RuntimeType.byteStream(runtimeConfig),
         "ByteSlab" to RuntimeType.ByteSlab,
         "SdkBody" to RuntimeType.sdkBody(runtimeConfig),
         "BuildError" to runtimeConfig.operationBuildError(),
-        "SmithyHttp" to CargoDependency.SmithyHttp(runtimeConfig).asType()
+        "SmithyHttp" to CargoDependency.SmithyHttp(runtimeConfig).asType(),
+        "NoOpSigner" to RuntimeType("NoOpSigner", smithyEventStream, "aws_smithy_eventstream::frame"),
     )
 
     override fun payloadMetadata(operationShape: OperationShape): ProtocolPayloadGenerator.PayloadMetadata {
@@ -108,8 +112,7 @@ class HttpBoundProtocolPayloadGenerator(
             val serializerGenerator = protocol.structuredDataSerializer(operationShape)
             generateStructureSerializer(writer, self, serializerGenerator.operationInputSerializer(operationShape))
         } else {
-            val payloadMember = operationShape.inputShape(model).expectMember(payloadMemberName)
-            generatePayloadMemberSerializer(writer, self, operationShape, payloadMember)
+            generatePayloadMemberSerializer(writer, self, operationShape, payloadMemberName)
         }
     }
 
@@ -120,8 +123,7 @@ class HttpBoundProtocolPayloadGenerator(
             val serializerGenerator = protocol.structuredDataSerializer(operationShape)
             generateStructureSerializer(writer, self, serializerGenerator.operationOutputSerializer(operationShape))
         } else {
-            val payloadMember = operationShape.outputShape(model).expectMember(payloadMemberName)
-            generatePayloadMemberSerializer(writer, self, operationShape, payloadMember)
+            generatePayloadMemberSerializer(writer, self, operationShape, payloadMemberName)
         }
     }
 
@@ -129,15 +131,24 @@ class HttpBoundProtocolPayloadGenerator(
         writer: RustWriter,
         self: String,
         operationShape: OperationShape,
-        payloadMember: MemberShape
+        payloadMemberName: String,
     ) {
         val serializerGenerator = protocol.structuredDataSerializer(operationShape)
 
-        // TODO(https://github.com/awslabs/smithy-rs/issues/1157) Add support for server event streams.
-        if (operationShape.isInputEventStream(model)) {
-            writer.serializeViaEventStream(operationShape, payloadMember, serializerGenerator)
+        if (operationShape.isEventStream(model)) {
+            if (operationShape.isInputEventStream(model) && target == CodegenTarget.CLIENT) {
+                val payloadMember = operationShape.inputShape(model).expectMember(payloadMemberName)
+                writer.serializeViaEventStream(operationShape, payloadMember, serializerGenerator, "self")
+            } else if (operationShape.isOutputEventStream(model) && target == CodegenTarget.SERVER) {
+                val payloadMember = operationShape.outputShape(model).expectMember(payloadMemberName)
+                writer.serializeViaEventStream(operationShape, payloadMember, serializerGenerator, "output")
+            }
         } else {
             val bodyMetadata = payloadMetadata(operationShape)
+            val payloadMember = when (httpMessageType) {
+                HttpMessageType.RESPONSE -> operationShape.outputShape(model).expectMember(payloadMemberName)
+                HttpMessageType.REQUEST -> operationShape.inputShape(model).expectMember(payloadMemberName)
+            }
             writer.serializeViaPayload(bodyMetadata, self, payloadMember, serializerGenerator)
         }
     }
@@ -156,11 +167,16 @@ class HttpBoundProtocolPayloadGenerator(
     private fun RustWriter.serializeViaEventStream(
         operationShape: OperationShape,
         memberShape: MemberShape,
-        serializerGenerator: StructuredDataSerializerGenerator
+        serializerGenerator: StructuredDataSerializerGenerator,
+        outerName: String,
     ) {
         val memberName = symbolProvider.toMemberName(memberShape)
         val unionShape = model.expectShape(memberShape.target, UnionShape::class.java)
 
+        val contentType = when (target) {
+            CodegenTarget.CLIENT -> httpBindingResolver.requestContentType(operationShape)
+            CodegenTarget.SERVER -> httpBindingResolver.responseContentType(operationShape)
+        }
         val marshallerConstructorFn = EventStreamMarshallerGenerator(
             model,
             target,
@@ -168,27 +184,50 @@ class HttpBoundProtocolPayloadGenerator(
             symbolProvider,
             unionShape,
             serializerGenerator,
-            httpBindingResolver.requestContentType(operationShape)
-                ?: throw CodegenException("event streams must set a content type"),
+            contentType ?: throw CodegenException("event streams must set a content type"),
         ).render()
 
+        val operationError = if (operationShape.errors.isNotEmpty()) {
+            operationShape.errorSymbol(symbolProvider)
+        } else {
+            RuntimeType("MessageStreamError", smithyEventStream, "aws_smithy_http::event_stream")
+        }
+
         // TODO(EventStream): [RPC] RPC protocols need to send an initial message with the
-        // parameters that are not `@eventHeader` or `@eventPayload`.
-        rustTemplate(
-            """
-            {
-                let marshaller = #{marshallerConstructorFn}();
-                let signer = _config.new_event_stream_signer(properties.clone());
-                let adapter: #{SmithyHttp}::event_stream::MessageStreamAdapter<_, #{OperationError}> =
-                    self.$memberName.into_body_stream(marshaller, signer);
-                let body: #{SdkBody} = #{hyper}::Body::wrap_stream(adapter).into();
-                body
-            }
-            """,
-            *codegenScope,
-            "marshallerConstructorFn" to marshallerConstructorFn,
-            "OperationError" to operationShape.errorSymbol(symbolProvider)
-        )
+        //  parameters that are not `@eventHeader` or `@eventPayload`.
+        when (target) {
+            CodegenTarget.CLIENT ->
+                rustTemplate(
+                    """
+                    {
+                        let marshaller = #{marshallerConstructorFn}();
+                        let signer = _config.new_event_stream_signer(properties.clone());
+                        let adapter: #{SmithyHttp}::event_stream::MessageStreamAdapter<_, #{OperationError}> =
+                            $outerName.$memberName.into_body_stream(marshaller, signer);
+                        let body: #{SdkBody} = #{hyper}::Body::wrap_stream(adapter).into();
+                        body
+                    }
+                    """,
+                    *codegenScope,
+                    "marshallerConstructorFn" to marshallerConstructorFn,
+                    "OperationError" to operationError,
+                )
+            CodegenTarget.SERVER ->
+                rustTemplate(
+                    """
+                    {
+                        let marshaller = #{marshallerConstructorFn}();
+                        let signer = #{NoOpSigner}{};
+                        let adapter: #{SmithyHttp}::event_stream::MessageStreamAdapter<_, #{OperationError}> =
+                            $outerName.$memberName.into_body_stream(marshaller, signer);
+                        adapter
+                    }
+                    """,
+                    *codegenScope,
+                    "marshallerConstructorFn" to marshallerConstructorFn,
+                    "OperationError" to operationError,
+                )
+        }
     }
 
     private fun RustWriter.serializeViaPayload(

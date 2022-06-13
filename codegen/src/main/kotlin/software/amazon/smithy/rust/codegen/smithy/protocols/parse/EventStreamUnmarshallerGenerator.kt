@@ -55,8 +55,13 @@ class EventStreamUnmarshallerGenerator(
     private val target: CodegenTarget,
 ) {
     private val unionSymbol = symbolProvider.toSymbol(unionShape)
-    private val operationErrorSymbol = operationShape.errorSymbol(symbolProvider)
     private val smithyEventStream = CargoDependency.SmithyEventStream(runtimeConfig)
+    private val operationErrorSymbol = if (operationShape.errors.isNotEmpty()) {
+        operationShape.errorSymbol(symbolProvider).toSymbol()
+    } else {
+        RuntimeType("MessageStreamError", smithyEventStream, "aws_smithy_http::event_stream")
+            .toSymbol()
+    }
     private val eventStreamSerdeModule = RustModule.private("event_stream_serde")
     private val codegenScope = arrayOf(
         "Blob" to RuntimeType("Blob", CargoDependency.SmithyTypes(runtimeConfig), "aws_smithy_types"),

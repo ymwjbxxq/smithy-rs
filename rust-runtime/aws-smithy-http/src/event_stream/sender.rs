@@ -11,22 +11,23 @@ use futures_core::Stream;
 use pin_project::pin_project;
 use std::error::Error as StdError;
 use std::fmt;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Input type for Event Streams.
-pub struct EventStreamInput<T> {
+pub struct EventStreamSender<T> {
     input_stream: Pin<Box<dyn Stream<Item = Result<T, BoxError>> + Send>>,
 }
 
-impl<T> fmt::Debug for EventStreamInput<T> {
+impl<T> Debug for EventStreamSender<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "EventStreamInput(Box<dyn Stream>)")
+        write!(f, "EventStreamSender(Box<dyn Stream>)")
     }
 }
 
-impl<T> EventStreamInput<T> {
+impl<T> EventStreamSender<T> {
     #[doc(hidden)]
     pub fn into_body_stream<E: StdError + Send + Sync + 'static>(
         self,
@@ -37,13 +38,57 @@ impl<T> EventStreamInput<T> {
     }
 }
 
-impl<T, S> From<S> for EventStreamInput<T>
+impl<T, S> From<S> for EventStreamSender<T>
 where
     S: Stream<Item = Result<T, BoxError>> + Send + 'static,
 {
     fn from(stream: S) -> Self {
-        EventStreamInput {
+        EventStreamSender {
             input_stream: Box::pin(stream),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct MessageStreamError {
+    kind: MessageStreamErrorKind,
+    pub(crate) meta: aws_smithy_types::Error,
+}
+
+#[derive(Debug)]
+pub enum MessageStreamErrorKind {
+    Unhandled(Box<dyn std::error::Error + Send + Sync + 'static>),
+}
+
+impl MessageStreamError {
+    /// Creates the `MessageStreamError::Unhandled` variant from any error type.
+    pub fn unhandled(err: impl Into<Box<dyn std::error::Error + Send + Sync + 'static>>) -> Self {
+        Self {
+            meta: Default::default(),
+            kind: MessageStreamErrorKind::Unhandled(err.into()),
+        }
+    }
+
+    /// Creates the `MessageStreamError::Unhandled` variant from a `aws_smithy_types::Error`.
+    pub fn generic(err: aws_smithy_types::Error) -> Self {
+        Self {
+            meta: err.clone(),
+            kind: MessageStreamErrorKind::Unhandled(err.into()),
+        }
+    }
+
+    /// Returns error metadata, which includes the error code, message,
+    /// request ID, and potentially additional information.
+    pub fn meta(&self) -> &aws_smithy_types::Error {
+        &self.meta
+    }
+}
+
+impl StdError for MessageStreamError {}
+impl fmt::Display for MessageStreamError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.kind {
+            MessageStreamErrorKind::Unhandled(inner) => std::fmt::Debug::fmt(inner, f),
         }
     }
 }
@@ -54,7 +99,7 @@ where
 /// This will yield an `Err(SdkError::ConstructionFailure)` if a message can't be
 /// marshalled into an Event Stream frame, (e.g., if the message payload was too large).
 #[pin_project]
-pub struct MessageStreamAdapter<T, E> {
+pub struct MessageStreamAdapter<T, E = MessageStreamError> {
     marshaller: Box<dyn MarshallMessage<Input = T> + Send + Sync>,
     signer: Box<dyn SignMessage + Send + Sync>,
     #[pin]
@@ -111,12 +156,15 @@ where
                 } else if !*this.end_signal_sent {
                     *this.end_signal_sent = true;
                     let mut buffer = Vec::new();
-                    this.signer
-                        .sign_empty()
-                        .map_err(|err| SdkError::ConstructionFailure(err))?
-                        .write_to(&mut buffer)
-                        .map_err(|err| SdkError::ConstructionFailure(Box::new(err)))?;
-                    Poll::Ready(Some(Ok(Bytes::from(buffer))))
+                    match this.signer.sign_empty() {
+                        Some(sign) => {
+                            sign.map_err(|err| SdkError::ConstructionFailure(err))?
+                                .write_to(&mut buffer)
+                                .map_err(|err| SdkError::ConstructionFailure(Box::new(err)))?;
+                            Poll::Ready(Some(Ok(Bytes::from(buffer))))
+                        }
+                        None => Poll::Ready(None),
+                    }
                 } else {
                     Poll::Ready(None)
                 }
@@ -129,7 +177,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::MarshallMessage;
-    use crate::event_stream::{EventStreamInput, MessageStreamAdapter};
+    use crate::event_stream::{EventStreamSender, MessageStreamAdapter};
     use crate::result::SdkError;
     use async_stream::stream;
     use aws_smithy_eventstream::error::Error as EventStreamError;
@@ -246,8 +294,8 @@ mod tests {
     // Verify the developer experience for this compiles
     #[allow(unused)]
     fn event_stream_input_ergonomics() {
-        fn check(input: impl Into<EventStreamInput<TestMessage>>) {
-            let _: EventStreamInput<TestMessage> = input.into();
+        fn check(input: impl Into<EventStreamSender<TestMessage>>) {
+            let _: EventStreamSender<TestMessage> = input.into();
         }
         check(stream! {
             yield Ok(TestMessage("test".into()));

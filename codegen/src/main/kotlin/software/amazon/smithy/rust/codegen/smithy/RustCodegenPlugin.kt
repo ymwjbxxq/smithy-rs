@@ -14,6 +14,7 @@ import software.amazon.smithy.rust.codegen.rustlang.Attribute.Companion.NonExhau
 import software.amazon.smithy.rust.codegen.rustlang.RustReservedWordSymbolProvider
 import software.amazon.smithy.rust.codegen.smithy.customizations.ClientCustomizations
 import software.amazon.smithy.rust.codegen.smithy.customize.CombinedCodegenDecorator
+import software.amazon.smithy.rust.codegen.smithy.generators.CodegenTarget
 import java.util.logging.Level
 import java.util.logging.Logger
 
@@ -49,7 +50,7 @@ class RustCodegenPlugin : SmithyBuildPlugin {
         fun baseSymbolProvider(model: Model, serviceShape: ServiceShape, symbolVisitorConfig: SymbolVisitorConfig = DefaultConfig) =
             SymbolVisitor(model, serviceShape = serviceShape, config = symbolVisitorConfig)
                 // Generate different types for EventStream shapes (e.g. transcribe streaming)
-                .let { EventStreamSymbolProvider(symbolVisitorConfig.runtimeConfig, it, model) }
+                .let { EventStreamSymbolProvider(symbolVisitorConfig.runtimeConfig, it, model, CodegenTarget.CLIENT) }
                 // Generate `ByteStream` instead of `Blob` for streaming binary shapes (e.g. S3 GetObject)
                 .let { StreamingShapeSymbolProvider(it, model) }
                 // Add Rust attributes (like `#[derive(PartialEq)]`) to generated shapes

@@ -10,7 +10,7 @@ use aws.protocols#restJson1
 service PokemonService {
     version: "2021-12-01",
     resources: [PokemonSpecies],
-    operations: [GetServerStatistics, EmptyOperation],
+    operations: [GetServerStatistics, EmptyOperation, CapturePokemonOperation],
 }
 
 /// A Pokémon species forms the basis for at least one Pokémon.
@@ -20,6 +20,44 @@ resource PokemonSpecies {
         name: String
     },
     read: GetPokemonSpecies,
+}
+
+/// Capture Pokémons via event streams
+@http(uri: "/capture-pokemon-event", method: "POST")
+operation CapturePokemonOperation {
+    input: CapturePokemonOperationEventsInput,
+    output: CapturePokemonOperationEventsOutput,
+}
+
+@input
+structure CapturePokemonOperationEventsInput {
+    @httpPayload
+    events: AttemptCapturingPokemonEvent,
+}
+
+@output
+structure CapturePokemonOperationEventsOutput {
+    @httpPayload
+    events: CapturePokemonEvents,
+}
+
+@streaming
+union AttemptCapturingPokemonEvent {
+    event: CapturingEvent,
+}
+
+structure CapturingEvent {
+    name: String,
+    pokeball: String,
+}
+
+@streaming
+union CapturePokemonEvents {
+    event: CaptureEvent,
+}
+
+structure CaptureEvent {
+    name: String,
 }
 
 /// Retrieve information about a Pokémon species.

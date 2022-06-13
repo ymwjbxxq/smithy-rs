@@ -13,8 +13,10 @@ use std::{
     sync::{atomic::AtomicU64, Arc},
 };
 
+use async_stream::stream;
 use aws_smithy_http_server::Extension;
 use pokemon_service_sdk::{error, input, model, output};
+use rand::Rng;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
 const PIKACHU_ENGLISH_FLAVOR_TEXT: &str =
@@ -181,6 +183,55 @@ pub async fn get_server_statistics(
         .unwrap_or(0);
     tracing::debug!("This instance served {} requests", counter);
     output::GetServerStatisticsOutput { calls_count }
+}
+
+/// Attempts to capture a Pokémon
+pub async fn capture_pokemon(mut input: input::CapturePokemonOperationInput) -> output::CapturePokemonOperationOutput {
+    let mut output_events = vec![];
+    loop {
+        match input.events.recv().await {
+            Ok(maybe_event) => match maybe_event {
+                Some(event) => {
+                    let capturing_event = event.as_event();
+                    // TODO: verify the events from the Pokémon trainer
+                    if let Ok(attempt) = capturing_event {
+                        let pokeball = attempt.pokeball.as_ref().map(|ball| ball.as_str()).unwrap_or("");
+                        let pokemon = attempt
+                            .name
+                            .as_ref()
+                            .map(|name| name.as_str())
+                            .unwrap_or("")
+                            .to_string();
+                        let captured = match pokeball {
+                            "Master Ball" => true,
+                            "Great Ball" => rand::thread_rng().gen_range(0..100) > 33,
+                            "Fast Ball" => rand::thread_rng().gen_range(0..100) > 66,
+                            _ => false,
+                        };
+                        if captured {
+                            output_events.push(Ok(crate::model::CapturePokemonEvents::Event(
+                                crate::model::CaptureEvent::builder().name(pokemon).build(),
+                            )));
+                        }
+                    }
+                }
+                None => break,
+            },
+            Err(e) => println!("{:?}", e),
+        }
+    }
+    let output_stream = stream! {
+        use std::time::Duration;
+        // Will it capture the Pokémon?
+        tokio::time::sleep(Duration::from_millis(1000)).await;
+        for output in output_events {
+            yield output;
+        }
+    };
+    return output::CapturePokemonOperationOutput::builder()
+        .events(output_stream.into())
+        .build()
+        .unwrap();
 }
 
 /// Empty operation used to benchmark the service.
