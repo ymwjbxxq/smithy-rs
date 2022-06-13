@@ -46,7 +46,7 @@ class EventStreamSymbolProvider(
                 val errorFmt = error.rustType().render(fullyQualified = true)
                 val innerFmt = initial.rustType().stripOuter<RustType.Option>().render(fullyQualified = true)
                 val outer = when (shape.isInputEventStream(model)) {
-                    true -> "EventStreamInput<$innerFmt>"
+                    true -> "EventStreamSender<$innerFmt>"
                     else -> "Receiver<$innerFmt, $errorFmt>"
                 }
                 val rustType = RustType.Opaque(outer, "aws_smithy_http::event_stream")

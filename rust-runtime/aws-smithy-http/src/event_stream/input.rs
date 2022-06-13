@@ -16,17 +16,17 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 /// Input type for Event Streams.
-pub struct EventStreamInput<T> {
+pub struct EventStreamSender<T> {
     input_stream: Pin<Box<dyn Stream<Item = Result<T, BoxError>> + Send>>,
 }
 
-impl<T> fmt::Debug for EventStreamInput<T> {
+impl<T> fmt::Debug for EventStreamSender<T> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "EventStreamInput(Box<dyn Stream>)")
+        write!(f, "EventStreamSender(Box<dyn Stream>)")
     }
 }
 
-impl<T> EventStreamInput<T> {
+impl<T> EventStreamSender<T> {
     #[doc(hidden)]
     pub fn into_body_stream<E: StdError + Send + Sync + 'static>(
         self,
@@ -37,12 +37,12 @@ impl<T> EventStreamInput<T> {
     }
 }
 
-impl<T, S> From<S> for EventStreamInput<T>
+impl<T, S> From<S> for EventStreamSender<T>
 where
     S: Stream<Item = Result<T, BoxError>> + Send + 'static,
 {
     fn from(stream: S) -> Self {
-        EventStreamInput {
+        EventStreamSender {
             input_stream: Box::pin(stream),
         }
     }
@@ -129,7 +129,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::MarshallMessage;
-    use crate::event_stream::{EventStreamInput, MessageStreamAdapter};
+    use crate::event_stream::{EventStreamSender, MessageStreamAdapter};
     use crate::result::SdkError;
     use async_stream::stream;
     use aws_smithy_eventstream::error::Error as EventStreamError;
@@ -246,8 +246,8 @@ mod tests {
     // Verify the developer experience for this compiles
     #[allow(unused)]
     fn event_stream_input_ergonomics() {
-        fn check(input: impl Into<EventStreamInput<TestMessage>>) {
-            let _: EventStreamInput<TestMessage> = input.into();
+        fn check(input: impl Into<EventStreamSender<TestMessage>>) {
+            let _: EventStreamSender<TestMessage> = input.into();
         }
         check(stream! {
             yield Ok(TestMessage("test".into()));
