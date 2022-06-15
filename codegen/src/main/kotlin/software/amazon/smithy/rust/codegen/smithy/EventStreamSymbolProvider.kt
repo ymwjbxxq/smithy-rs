@@ -14,12 +14,14 @@ import software.amazon.smithy.rust.codegen.rustlang.CargoDependency
 import software.amazon.smithy.rust.codegen.rustlang.RustType
 import software.amazon.smithy.rust.codegen.rustlang.render
 import software.amazon.smithy.rust.codegen.rustlang.stripOuter
+import software.amazon.smithy.rust.codegen.smithy.generators.CodegenTarget
 import software.amazon.smithy.rust.codegen.smithy.generators.error.errorSymbol
 import software.amazon.smithy.rust.codegen.smithy.traits.SyntheticInputTrait
 import software.amazon.smithy.rust.codegen.smithy.traits.SyntheticOutputTrait
 import software.amazon.smithy.rust.codegen.util.getTrait
 import software.amazon.smithy.rust.codegen.util.isEventStream
 import software.amazon.smithy.rust.codegen.util.isInputEventStream
+import software.amazon.smithy.rust.codegen.util.isOutputEventStream
 
 /**
  * Wrapping symbol provider to wrap modeled types with the aws-smithy-http Event Stream send/receive types.
@@ -27,7 +29,8 @@ import software.amazon.smithy.rust.codegen.util.isInputEventStream
 class EventStreamSymbolProvider(
     private val runtimeConfig: RuntimeConfig,
     base: RustSymbolProvider,
-    private val model: Model
+    private val model: Model,
+    private val target: CodegenTarget,
 ) : WrappingSymbolProvider(base) {
     override fun toSymbol(shape: Shape): Symbol {
         val initial = super.toSymbol(shape)
@@ -45,7 +48,9 @@ class EventStreamSymbolProvider(
                 val error = operationShape.errorSymbol(this).toSymbol()
                 val errorFmt = error.rustType().render(fullyQualified = true)
                 val innerFmt = initial.rustType().stripOuter<RustType.Option>().render(fullyQualified = true)
-                val outer = when (shape.isInputEventStream(model)) {
+                val isSender = (shape.isInputEventStream(model) && target == CodegenTarget.CLIENT) ||
+                    (shape.isOutputEventStream(model) && target == CodegenTarget.SERVER)
+                val outer = when (isSender) {
                     true -> "EventStreamSender<$innerFmt>"
                     else -> "Receiver<$innerFmt, $errorFmt>"
                 }

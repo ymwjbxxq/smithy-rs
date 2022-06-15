@@ -30,6 +30,18 @@ pub trait SignMessage: fmt::Debug {
     fn sign_empty(&mut self) -> Result<Message, SignMessageError>;
 }
 
+#[derive(Debug)]
+pub struct NoOpSigner {}
+impl SignMessage for NoOpSigner {
+    fn sign(&mut self, message: Message) -> Result<Message, SignMessageError> {
+        Ok(message)
+    }
+
+    fn sign_empty(&mut self) -> Result<Message, SignMessageError> {
+        Ok(Message::new(""))
+    }
+}
+
 /// Converts a Smithy modeled Event Stream type into a [`Message`](Message).
 pub trait MarshallMessage: fmt::Debug {
     /// Smithy modeled input type to convert from.

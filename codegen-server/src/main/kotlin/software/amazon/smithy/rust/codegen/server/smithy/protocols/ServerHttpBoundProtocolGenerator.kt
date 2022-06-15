@@ -505,13 +505,10 @@ private class ServerHttpBoundProtocolTraitImplGenerator(
         // Fallback to the default code of `http::response::Builder`, 200.
 
         operationShape.outputShape(model).findStreamingMember(model)?.let {
-            val memberName = symbolProvider.toMemberName(it)
-            rustTemplate(
-                """
-                let body = #{SmithyHttpServer}::body::to_boxed(#{SmithyHttpServer}::body::Body::wrap_stream(output.$memberName));
-                """,
-                *codegenScope,
-            )
+            val payloadGenerator = HttpBoundProtocolPayloadGenerator(codegenContext, protocol, httpMessageType = HttpMessageType.RESPONSE)
+            withBlockTemplate("let body = #{SmithyHttpServer}::body::boxed(#{SmithyHttpServer}::body::Body::wrap_stream(", "));", *codegenScope) {
+                payloadGenerator.generatePayload(this, "output", operationShape)
+            }
         } ?: run {
             val payloadGenerator = HttpBoundProtocolPayloadGenerator(codegenContext, protocol, httpMessageType = HttpMessageType.RESPONSE)
             withBlockTemplate("let body = #{SmithyHttpServer}::body::to_boxed(", ");", *codegenScope) {

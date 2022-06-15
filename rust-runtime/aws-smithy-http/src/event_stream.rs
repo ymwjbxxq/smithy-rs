@@ -7,13 +7,13 @@
 
 use std::error::Error as StdError;
 
-mod input;
-mod output;
+mod receiver;
+mod sender;
 
 pub type BoxError = Box<dyn StdError + Send + Sync + 'static>;
 
 #[doc(inline)]
-pub use input::{EventStreamSender, MessageStreamAdapter};
+pub use sender::{EventStreamSender, MessageStreamAdapter};
 
 #[doc(inline)]
-pub use output::{Error, RawMessage, Receiver};
+pub use receiver::{Error, RawMessage, Receiver};
