@@ -11,6 +11,7 @@ use futures_core::Stream;
 use pin_project::pin_project;
 use std::error::Error as StdError;
 use std::fmt;
+use std::fmt::Debug;
 use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
@@ -48,13 +49,27 @@ where
     }
 }
 
+#[derive(Debug)]
+pub enum MessageStreamError {
+    ConstructionFailure,
+}
+
+impl StdError for MessageStreamError {}
+impl std::fmt::Display for MessageStreamError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            MessageStreamError::ConstructionFailure => write!(f, "ConstructionFailure"),
+        }
+    }
+}
+
 /// Adapts a `Stream<SmithyMessageType>` to a signed `Stream<Bytes>` by using the provided
 /// message marshaller and signer implementations.
 ///
 /// This will yield an `Err(SdkError::ConstructionFailure)` if a message can't be
 /// marshalled into an Event Stream frame, (e.g., if the message payload was too large).
 #[pin_project]
-pub struct MessageStreamAdapter<T, E> {
+pub struct MessageStreamAdapter<T, E = MessageStreamError> {
     marshaller: Box<dyn MarshallMessage<Input = T> + Send + Sync>,
     signer: Box<dyn SignMessage + Send + Sync>,
     #[pin]

@@ -13,7 +13,7 @@ mod sender;
 pub type BoxError = Box<dyn StdError + Send + Sync + 'static>;
 
 #[doc(inline)]
-pub use sender::{EventStreamSender, MessageStreamAdapter};
+pub use sender::{EventStreamSender, MessageStreamAdapter, MessageStreamError};
 
 #[doc(inline)]
 pub use receiver::{Error, RawMessage, Receiver};

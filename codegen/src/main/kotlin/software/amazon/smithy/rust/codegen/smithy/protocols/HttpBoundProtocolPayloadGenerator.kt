@@ -185,6 +185,12 @@ class HttpBoundProtocolPayloadGenerator(
             contentType ?: throw CodegenException("event streams must set a content type"),
         ).render()
 
+        val operationError = if (operationShape.errors.isNotEmpty()) {
+            operationShape.errorSymbol(symbolProvider)
+        } else {
+            RuntimeType("MessageStreamError", smithyEventStream, "aws_smithy_http::event_stream")
+        }
+
         // TODO(EventStream): [RPC] RPC protocols need to send an initial message with the
         //  parameters that are not `@eventHeader` or `@eventPayload`.
         when (target) {
@@ -202,7 +208,7 @@ class HttpBoundProtocolPayloadGenerator(
                     """,
                     *codegenScope,
                     "marshallerConstructorFn" to marshallerConstructorFn,
-                    "OperationError" to operationShape.errorSymbol(symbolProvider)
+                    "OperationError" to operationError,
                 )
             CodegenTarget.SERVER ->
                 rustTemplate(
@@ -217,7 +223,7 @@ class HttpBoundProtocolPayloadGenerator(
                     """,
                     *codegenScope,
                     "marshallerConstructorFn" to marshallerConstructorFn,
-                    "OperationError" to operationShape.errorSymbol(symbolProvider)
+                    "OperationError" to operationError,
                 )
         }
     }
