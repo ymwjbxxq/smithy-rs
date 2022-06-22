@@ -694,8 +694,7 @@ private class ServerHttpBoundProtocolTraitImplGenerator(
                             """
                             {
                                 let body = request.take_body().ok_or(#{RequestRejection}::BodyAlreadyExtracted)?;
-                                let bytes = #{Hyper}::body::to_bytes(body).await?;
-                                Some(#{Deserializer}(&mut bytes.into())?)
+                                Some(#{Deserializer}(&mut body.into().into_inner())?)
                             }
                             """,
                             "Deserializer" to deserializer,

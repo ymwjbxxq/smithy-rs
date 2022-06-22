@@ -155,7 +155,13 @@ open class CombinedCodegenDecorator(decorators: List<RustCodegenDecorator>) : Ru
                 .onEach {
                     logger.info("Adding Codegen Decorator: ${it.javaClass.name}")
                 }.toList()
-            return CombinedCodegenDecorator(decorators + RequiredCustomizations() + EventStreamDecorator(listOf()) + FluentClientDecorator() + extras)
+            return CombinedCodegenDecorator(
+                decorators + RequiredCustomizations() + MergedEventStreamDecorator(
+                    listOf(
+                        NoOpEventStreamSigningDecorator()
+                    )
+                ) + FluentClientDecorator() + extras
+            )
         }
     }
 }

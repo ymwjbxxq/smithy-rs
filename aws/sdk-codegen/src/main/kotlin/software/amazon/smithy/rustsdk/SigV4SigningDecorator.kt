@@ -26,6 +26,7 @@ import software.amazon.smithy.rust.codegen.smithy.customize.EventStreamDecorator
 import software.amazon.smithy.rust.codegen.smithy.customize.OperationCustomization
 import software.amazon.smithy.rust.codegen.smithy.customize.OperationSection
 import software.amazon.smithy.rust.codegen.smithy.generators.config.ConfigCustomization
+import software.amazon.smithy.rust.codegen.smithy.generators.config.EventStreamSigningConfig
 import software.amazon.smithy.rust.codegen.smithy.generators.config.ServiceConfig
 import software.amazon.smithy.rust.codegen.smithy.letIf
 import software.amazon.smithy.rust.codegen.util.dq
@@ -42,7 +43,7 @@ import software.amazon.smithy.rust.codegen.util.isInputEventStream
  * - sets a default `OperationSigningConfig` A future enhancement will customize this for specific services that need
  *   different behavior.
  */
-class SigV4SigningDecorator : EventStreamDecorator(listOf()) {
+class SigV4SigningDecorator : EventStreamDecorator {
     override val name: String = "SigV4Signing"
     override val order: Byte = 0
 
@@ -81,7 +82,7 @@ class SigV4SigningConfig(
     runtimeConfig: RuntimeConfig,
     private val serviceHasEventStream: Boolean,
     private val sigV4Trait: SigV4Trait
-) : ConfigCustomization() {
+) : EventStreamSigningConfig(runtimeConfig) {
     private val codegenScope = arrayOf(
         "SigV4Signer" to RuntimeType(
             "SigV4Signer",
@@ -111,21 +112,27 @@ class SigV4SigningConfig(
                     *codegenScope
                 )
                 if (serviceHasEventStream) {
-                    rustTemplate(
-                        """
-                        /// Creates a new Event Stream `SignMessage` implementor.
-                        pub fn new_event_stream_signer(
-                            &self,
-                            properties: #{SharedPropertyBag}
-                        ) -> #{SigV4Signer} {
-                            #{SigV4Signer}::new(properties)
-                        }
-                        """,
-                        *codegenScope
-                    )
+                    inner()
                 }
             }
             else -> emptySection
+        }
+    }
+
+    override fun inner(): Writable {
+        return writable {
+            rustTemplate(
+                """
+                /// Creates a new Event Stream `SignMessage` implementor.
+                pub fn new_event_stream_sigv4_signer(
+                    &self,
+                    properties: #{SharedPropertyBag}
+                ) -> #{SigV4Signer} {
+                    #{SigV4Signer}::new(properties)
+                }
+                """,
+                *codegenScope
+            )
         }
     }
 }

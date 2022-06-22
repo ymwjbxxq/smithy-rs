@@ -61,15 +61,13 @@ class EventStreamSymbolProvider(
                     else -> "Receiver<$innerFmt, $errorFmt>"
                 }
                 val rustType = RustType.Opaque(outer, "aws_smithy_http::event_stream")
-                val symbol = initial.toBuilder()
+                return initial.toBuilder()
                     .name(rustType.name)
                     .rustType(rustType)
                     .addReference(initial)
                     .addDependency(CargoDependency.SmithyHttp(runtimeConfig).withFeature("event-stream"))
-                if (operationShape.errors.isNotEmpty()) {
-                    symbol.addReference(error)
-                }
-                return symbol.build()
+                    .addReference(error)
+                    .build()
             }
         }
 

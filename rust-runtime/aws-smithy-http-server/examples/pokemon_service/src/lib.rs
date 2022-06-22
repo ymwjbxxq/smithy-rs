@@ -210,8 +210,8 @@ pub async fn capture_pokemon(mut input: input::CapturePokemonOperationInput) -> 
                                 _ => false,
                             };
                             tokio::time::sleep(Duration::from_millis(1000)).await;
+                            // Will it capture the Pokémon?
                             if captured {
-                                // Will it capture the Pokémon?
                                 yield (Ok(crate::model::CapturePokemonEvents::Event(
                                     crate::model::CaptureEvent::builder().name(pokemon).build(),
                                 )));

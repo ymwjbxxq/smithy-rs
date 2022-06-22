@@ -53,3 +53,9 @@ message = "Rename EventStreamInput to EventStreamSender"
 references = ["smithy-rs#1157"]
 meta = { "breaking" = true, "tada" = false, "bug" = false }
 author = "82marbag"
+
+[[aws-sdk-rust]]
+message = "Rename EventStreamInput to EventStreamSender"
+references = ["smithy-rs#1157"]
+meta = { "breaking" = true, "tada" = false, "bug" = false }
+author = "82marbag"
