@@ -47,6 +47,14 @@ union AttemptCapturingPokemonEvent {
 }
 
 structure CapturingEvent {
+    @eventHeader
+    region: String,
+
+    @eventPayload
+    payload: CapturingPayload
+}
+
+structure CapturingPayload {
     name: String,
     pokeball: String,
 }
@@ -57,7 +65,14 @@ union CapturePokemonEvents {
 }
 
 structure CaptureEvent {
+    @eventHeader
     name: String,
+
+    @eventHeader
+    shiny: Boolean,
+
+    @eventPayload
+    pokedex_update: Blob,
 }
 
 /// Retrieve information about a Pokémon species.

@@ -4,9 +4,9 @@
  */
 
 use async_stream::stream;
-use pokemon_service_client::model::AttemptCapturingPokemonEvent;
-use pokemon_service_client::model::CapturingEvent;
-use pokemon_service_client::{Builder, Client, Config};
+use pokemon_service_client::{
+    model::AttemptCapturingPokemonEvent, model::CapturingEvent, model::CapturingPayload, Builder, Client, Config,
+};
 use rand::Rng;
 
 fn get_pokeball() -> String {
@@ -42,13 +42,31 @@ pub async fn main() -> Result<(), ()> {
     let input_stream = stream! {
         // Always Pikachu
         yield Ok(AttemptCapturingPokemonEvent::Event(
-            CapturingEvent::builder().name("Pikachu").pokeball("Master Ball").build()
+            CapturingEvent::builder()
+            .region("Kanto")
+            .payload(CapturingPayload::builder()
+                .name("Pikachu")
+                .pokeball("Master Ball")
+                .build())
+            .build()
         ));
         yield Ok(AttemptCapturingPokemonEvent::Event(
-            CapturingEvent::builder().name("Regieleki").pokeball("Fast Ball").build()
+            CapturingEvent::builder()
+            .region("Kanto")
+            .payload(CapturingPayload::builder()
+                .name("Regieleki")
+                .pokeball("Fast Ball")
+                .build())
+            .build()
         ));
         yield Ok(AttemptCapturingPokemonEvent::Event(
-            CapturingEvent::builder().name("Charizard").pokeball("Great Ball").build()
+            CapturingEvent::builder()
+            .region("Kanto")
+            .payload(CapturingPayload::builder()
+                .name("Charizard")
+                .pokeball("Great Ball")
+                .build())
+            .build()
         ));
     };
 
@@ -63,7 +81,17 @@ pub async fn main() -> Result<(), ()> {
         match output.events.recv().await {
             Ok(Some(capture)) => {
                 let pokemon = capture.as_event().unwrap().name.as_ref().unwrap().clone();
-                println!("captured {}", pokemon);
+                let pokedex = capture.as_event().unwrap().pokedex_update.as_ref().unwrap().clone();
+                let shiny = if *capture.as_event().unwrap().shiny.as_ref().unwrap() {
+                    ""
+                } else {
+                    "not "
+                };
+                let expected_pokedex: Vec<u8> = (0..255).collect();
+                println!("captured {} ({}shiny)", pokemon, shiny);
+                if expected_pokedex == pokedex.into_inner() {
+                    println!("pokedex updated")
+                }
                 team.push(pokemon);
             }
             Err(e) => {
@@ -79,7 +107,13 @@ pub async fn main() -> Result<(), ()> {
         let pokemon = get_pokemon_to_capture();
         let input_stream = stream! {
             yield Ok(AttemptCapturingPokemonEvent::Event(
-                CapturingEvent::builder().name(pokemon).pokeball(pokeball).build()
+                CapturingEvent::builder()
+                .region("Kanto")
+                .payload(CapturingPayload::builder()
+                    .name(pokemon)
+                    .pokeball(pokeball)
+                    .build())
+                .build()
             ))
         };
         let mut output = client
@@ -91,7 +125,17 @@ pub async fn main() -> Result<(), ()> {
         match output.events.recv().await {
             Ok(Some(capture)) => {
                 let pokemon = capture.as_event().unwrap().name.as_ref().unwrap().clone();
-                println!("captured {}", pokemon);
+                let pokedex = capture.as_event().unwrap().pokedex_update.as_ref().unwrap().clone();
+                let shiny = if *capture.as_event().unwrap().shiny.as_ref().unwrap() {
+                    ""
+                } else {
+                    "not "
+                };
+                let expected_pokedex: Vec<u8> = (0..255).collect();
+                println!("captured {} ({}shiny)", pokemon, shiny);
+                if expected_pokedex == pokedex.into_inner() {
+                    println!("pokedex updated")
+                }
                 team.push(pokemon);
             }
             Err(e) => {

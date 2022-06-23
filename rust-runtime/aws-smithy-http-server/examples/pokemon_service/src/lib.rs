@@ -15,7 +15,7 @@ use std::{
 
 use async_stream::stream;
 use aws_smithy_http_server::Extension;
-use pokemon_service_sdk::{error, input, model, output};
+use pokemon_service_sdk::{error, input, model, model::CapturingPayload, output, types::Blob};
 use rand::Rng;
 use tracing_subscriber::{prelude::*, EnvFilter};
 
@@ -196,24 +196,34 @@ pub async fn capture_pokemon(mut input: input::CapturePokemonOperationInput) -> 
                         let capturing_event = event.as_event();
                         // TODO: verify the events from the Pokémon trainer
                         if let Ok(attempt) = capturing_event {
-                            let pokeball = attempt.pokeball.as_ref().map(|ball| ball.as_str()).unwrap_or("");
-                            let pokemon = attempt
-                                .name
-                                .as_ref()
-                                .map(|name| name.as_str())
-                                .unwrap_or("")
-                                .to_string();
+                            let payload = attempt.payload.clone().unwrap_or(CapturingPayload::builder().build());
+                            let pokeball = payload.pokeball.as_ref().map(|ball| ball.as_str()).unwrap_or("");
+                            let region = attempt.region.as_ref().map(|region| region.as_str()).unwrap_or("");
                             let captured = match pokeball {
                                 "Master Ball" => true,
                                 "Great Ball" => rand::thread_rng().gen_range(0..100) > 33,
                                 "Fast Ball" => rand::thread_rng().gen_range(0..100) > 66,
                                 _ => false,
                             };
+                            // Only support Kanto
+                            let supported_region = "Kanto" == region;
                             tokio::time::sleep(Duration::from_millis(1000)).await;
                             // Will it capture the Pokémon?
-                            if captured {
+                            if captured && supported_region {
+                                let shiny = rand::thread_rng().gen_range(0..4096) == 0;
+                                let pokemon = payload
+                                    .name
+                                    .as_ref()
+                                    .map(|name| name.as_str())
+                                    .unwrap_or("")
+                                    .to_string();
+                                let pokedex: Vec<u8> = (0..255).collect();
                                 yield (Ok(crate::model::CapturePokemonEvents::Event(
-                                    crate::model::CaptureEvent::builder().name(pokemon).build(),
+                                    crate::model::CaptureEvent::builder()
+                                    .name(pokemon)
+                                    .shiny(shiny)
+                                    .pokedex_update(Blob::new(pokedex))
+                                    .build(),
                                 )));
                             }
                         }
