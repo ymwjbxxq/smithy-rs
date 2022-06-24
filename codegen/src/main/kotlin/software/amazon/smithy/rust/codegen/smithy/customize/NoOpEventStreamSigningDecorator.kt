@@ -14,15 +14,18 @@ import software.amazon.smithy.rust.codegen.smithy.RuntimeConfig
 import software.amazon.smithy.rust.codegen.smithy.RuntimeType
 import software.amazon.smithy.rust.codegen.smithy.generators.config.ConfigCustomization
 import software.amazon.smithy.rust.codegen.smithy.generators.config.EventStreamSigningConfig
+import software.amazon.smithy.rust.codegen.util.hasEventStreamOperations
 
 /**
  * The NoOpEventStreamSigningDecorator:
  * - adds a `new_event_stream_signer()` method to `config` to create an Event Stream NoOp signer
- * - can be customized by subclassing, see SigV4SigningDecorator
  */
-open class NoOpEventStreamSigningDecorator : EventStreamDecorator {
+open class NoOpEventStreamSigningDecorator : RustCodegenDecorator {
     override val name: String = "EventStreamDecorator"
     override val order: Byte = 0
+
+    private fun applies(codegenContext: CodegenContext): Boolean =
+        codegenContext.serviceShape.hasEventStreamOperations(codegenContext.model)
 
     override fun configCustomizations(
         codegenContext: CodegenContext,
@@ -46,7 +49,12 @@ class NoOpEventStreamSigningConfig(
             "SharedPropertyBag",
             CargoDependency.SmithyHttp(runtimeConfig),
             "aws_smithy_http::property_bag"
-        )
+        ),
+        "SignMessage" to RuntimeType(
+            "SignMessage",
+            CargoDependency.SmithyEventStream(runtimeConfig),
+            "aws_smithy_eventstream::frame"
+        ),
     )
 
     override fun inner(): Writable {
@@ -54,10 +62,10 @@ class NoOpEventStreamSigningConfig(
             rustTemplate(
                 """
                 /// Creates a new Event Stream `SignMessage` implementor.
-                pub fn new_event_stream_no_op_signer(
+                pub fn new_event_stream_signer(
                     &self,
                     _properties: #{SharedPropertyBag}
-                ) -> #{NoOpSigner} {
+                ) -> impl #{SignMessage} {
                     #{NoOpSigner}{}
                 }
                 """,

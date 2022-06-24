@@ -15,7 +15,6 @@ import software.amazon.smithy.rust.codegen.rustlang.RustType
 import software.amazon.smithy.rust.codegen.rustlang.render
 import software.amazon.smithy.rust.codegen.rustlang.stripOuter
 import software.amazon.smithy.rust.codegen.smithy.generators.CodegenTarget
-import software.amazon.smithy.rust.codegen.smithy.generators.error.errorSymbol
 import software.amazon.smithy.rust.codegen.smithy.traits.SyntheticInputTrait
 import software.amazon.smithy.rust.codegen.smithy.traits.SyntheticOutputTrait
 import software.amazon.smithy.rust.codegen.util.getTrait
@@ -46,12 +45,7 @@ class EventStreamSymbolProvider(
             }
             // If we find an operation shape, then we can wrap the type
             if (operationShape != null) {
-                val error = if (operationShape.errors.isNotEmpty()) {
-                    operationShape.errorSymbol(this).toSymbol()
-                } else {
-                    RuntimeType("MessageStreamError", smithyEventStream, "aws_smithy_http::event_stream")
-                        .toSymbol()
-                }
+                val error = RuntimeType("MessageStreamError", smithyEventStream, "aws_smithy_http::event_stream").toSymbol()
                 val errorFmt = error.rustType().render(fullyQualified = true)
                 val innerFmt = initial.rustType().stripOuter<RustType.Option>().render(fullyQualified = true)
                 val isSender = (shape.isInputEventStream(model) && target == CodegenTarget.CLIENT) ||

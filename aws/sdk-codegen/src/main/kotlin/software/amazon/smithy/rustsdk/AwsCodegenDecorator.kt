@@ -11,8 +11,6 @@ import software.amazon.smithy.rust.codegen.smithy.customizations.RetryConfigDeco
 import software.amazon.smithy.rust.codegen.smithy.customizations.SleepImplDecorator
 import software.amazon.smithy.rust.codegen.smithy.customizations.TimeoutConfigDecorator
 import software.amazon.smithy.rust.codegen.smithy.customize.CombinedCodegenDecorator
-import software.amazon.smithy.rust.codegen.smithy.customize.MergedEventStreamDecorator
-import software.amazon.smithy.rust.codegen.smithy.customize.NoOpEventStreamSigningDecorator
 import software.amazon.smithy.rustsdk.customize.apigateway.ApiGatewayDecorator
 import software.amazon.smithy.rustsdk.customize.auth.DisabledAuthDecorator
 import software.amazon.smithy.rustsdk.customize.ec2.Ec2Decorator
@@ -26,7 +24,7 @@ val DECORATORS = listOf(
     RegionDecorator(),
     AwsEndpointDecorator(),
     UserAgentDecorator(),
-    MergedEventStreamDecorator(listOf(SigV4SigningDecorator(), NoOpEventStreamSigningDecorator())),
+    SigV4SigningDecorator(),
     RetryPolicyDecorator(),
     IntegrationTestDecorator(),
     AwsFluentClientDecorator(),

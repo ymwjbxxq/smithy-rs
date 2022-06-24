@@ -5,7 +5,6 @@
 
 package software.amazon.smithy.rust.codegen.smithy.protocols
 
-import software.amazon.smithy.aws.traits.auth.SigV4Trait
 import software.amazon.smithy.codegen.core.CodegenException
 import software.amazon.smithy.model.shapes.BlobShape
 import software.amazon.smithy.model.shapes.DocumentShape
@@ -18,18 +17,15 @@ import software.amazon.smithy.model.traits.EnumTrait
 import software.amazon.smithy.rust.codegen.rustlang.CargoDependency
 import software.amazon.smithy.rust.codegen.rustlang.RustModule
 import software.amazon.smithy.rust.codegen.rustlang.RustWriter
-import software.amazon.smithy.rust.codegen.rustlang.Writable
 import software.amazon.smithy.rust.codegen.rustlang.asType
 import software.amazon.smithy.rust.codegen.rustlang.rust
 import software.amazon.smithy.rust.codegen.rustlang.rustBlockTemplate
 import software.amazon.smithy.rust.codegen.rustlang.rustTemplate
 import software.amazon.smithy.rust.codegen.rustlang.withBlock
 import software.amazon.smithy.rust.codegen.rustlang.withBlockTemplate
-import software.amazon.smithy.rust.codegen.rustlang.writable
 import software.amazon.smithy.rust.codegen.smithy.CodegenContext
 import software.amazon.smithy.rust.codegen.smithy.RuntimeType
 import software.amazon.smithy.rust.codegen.smithy.generators.CodegenTarget
-import software.amazon.smithy.rust.codegen.smithy.generators.error.errorSymbol
 import software.amazon.smithy.rust.codegen.smithy.generators.http.HttpMessageType
 import software.amazon.smithy.rust.codegen.smithy.generators.operationBuildError
 import software.amazon.smithy.rust.codegen.smithy.generators.protocol.ProtocolPayloadGenerator
@@ -169,19 +165,6 @@ class HttpBoundProtocolPayloadGenerator(
         }
     }
 
-    private fun generateSigner(): Writable {
-        when (target) {
-            CodegenTarget.CLIENT -> {
-                if (codegenContext.serviceShape.hasTrait<SigV4Trait>()) {
-                    return writable { rust("_config.new_event_stream_signer(properties.clone())") }
-                }
-                return writable { rust("_config.new_event_stream_no_op_signer(properties.clone())") }
-            }
-            CodegenTarget.SERVER ->
-                return writable { rustTemplate("#{NoOpSigner}{}", *codegenScope) }
-        }
-    }
-
     private fun RustWriter.serializeViaEventStream(
         operationShape: OperationShape,
         memberShape: MemberShape,
@@ -205,13 +188,6 @@ class HttpBoundProtocolPayloadGenerator(
             contentType ?: throw CodegenException("event streams must set a content type"),
         ).render()
 
-        val operationError = if (operationShape.errors.isNotEmpty()) {
-            operationShape.errorSymbol(symbolProvider)
-        } else {
-            RuntimeType("MessageStreamError", smithyEventStream, "aws_smithy_http::event_stream")
-        }
-
-        val signer = generateSigner()
         // TODO(EventStream): [RPC] RPC protocols need to send an initial message with the
         //  parameters that are not `@eventHeader` or `@eventPayload`.
         when (target) {
@@ -220,33 +196,29 @@ class HttpBoundProtocolPayloadGenerator(
                     """
                     {
                         let marshaller = #{marshallerConstructorFn}();
-                        let signer = #{signer:W};
-                        let adapter: #{SmithyHttp}::event_stream::MessageStreamAdapter<_, #{OperationError}> =
+                        let signer = _config.new_event_stream_signer(properties.clone());
+                        let adapter: #{SmithyHttp}::event_stream::MessageStreamAdapter<_> =
                             $outerName.$memberName.into_body_stream(marshaller, signer);
                         let body: #{SdkBody} = #{hyper}::Body::wrap_stream(adapter).into();
                         body
                     }
                     """,
                     *codegenScope,
-                    "signer" to signer,
                     "marshallerConstructorFn" to marshallerConstructorFn,
-                    "OperationError" to operationError,
                 )
             CodegenTarget.SERVER ->
                 rustTemplate(
                     """
                     {
                         let marshaller = #{marshallerConstructorFn}();
-                        let signer = #{signer:W};
-                        let adapter: #{SmithyHttp}::event_stream::MessageStreamAdapter<_, #{OperationError}> =
+                        let signer = #{NoOpSigner}{};
+                        let adapter: #{SmithyHttp}::event_stream::MessageStreamAdapter<_> =
                             $outerName.$memberName.into_body_stream(marshaller, signer);
                         adapter
                     }
                     """,
                     *codegenScope,
-                    "signer" to signer,
                     "marshallerConstructorFn" to marshallerConstructorFn,
-                    "OperationError" to operationError,
                 )
         }
     }

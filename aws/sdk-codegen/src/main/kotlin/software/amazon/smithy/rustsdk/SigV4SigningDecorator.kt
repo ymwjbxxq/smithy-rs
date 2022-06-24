@@ -22,9 +22,9 @@ import software.amazon.smithy.rust.codegen.rustlang.writable
 import software.amazon.smithy.rust.codegen.smithy.CodegenContext
 import software.amazon.smithy.rust.codegen.smithy.RuntimeConfig
 import software.amazon.smithy.rust.codegen.smithy.RuntimeType
-import software.amazon.smithy.rust.codegen.smithy.customize.EventStreamDecorator
 import software.amazon.smithy.rust.codegen.smithy.customize.OperationCustomization
 import software.amazon.smithy.rust.codegen.smithy.customize.OperationSection
+import software.amazon.smithy.rust.codegen.smithy.customize.RustCodegenDecorator
 import software.amazon.smithy.rust.codegen.smithy.generators.config.ConfigCustomization
 import software.amazon.smithy.rust.codegen.smithy.generators.config.EventStreamSigningConfig
 import software.amazon.smithy.rust.codegen.smithy.generators.config.ServiceConfig
@@ -43,11 +43,11 @@ import software.amazon.smithy.rust.codegen.util.isInputEventStream
  * - sets a default `OperationSigningConfig` A future enhancement will customize this for specific services that need
  *   different behavior.
  */
-class SigV4SigningDecorator : EventStreamDecorator {
+class SigV4SigningDecorator : RustCodegenDecorator {
     override val name: String = "SigV4Signing"
     override val order: Byte = 0
 
-    override fun applies(codegenContext: CodegenContext): Boolean = codegenContext.serviceShape.hasTrait<SigV4Trait>()
+    private fun applies(codegenContext: CodegenContext): Boolean = codegenContext.serviceShape.hasTrait<SigV4Trait>()
 
     override fun configCustomizations(
         codegenContext: CodegenContext,
@@ -93,7 +93,12 @@ class SigV4SigningConfig(
             "SharedPropertyBag",
             CargoDependency.SmithyHttp(runtimeConfig),
             "aws_smithy_http::property_bag"
-        )
+        ),
+        "SignMessage" to RuntimeType(
+            "SignMessage",
+            CargoDependency.SmithyEventStream(runtimeConfig),
+            "aws_smithy_eventstream::frame"
+        ),
     )
 
     override fun section(section: ServiceConfig): Writable {
@@ -124,10 +129,10 @@ class SigV4SigningConfig(
             rustTemplate(
                 """
                 /// Creates a new Event Stream `SignMessage` implementor.
-                pub fn new_event_stream_sigv4_signer(
+                pub fn new_event_stream_signer(
                     &self,
                     properties: #{SharedPropertyBag}
-                ) -> #{SigV4Signer} {
+                ) -> impl #{SignMessage} {
                     #{SigV4Signer}::new(properties)
                 }
                 """,

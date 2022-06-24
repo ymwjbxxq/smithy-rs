@@ -12,7 +12,6 @@ use pin_project::pin_project;
 use std::error::Error as StdError;
 use std::fmt;
 use std::fmt::Debug;
-use std::marker::PhantomData;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 
@@ -29,11 +28,11 @@ impl<T> Debug for EventStreamSender<T> {
 
 impl<T> EventStreamSender<T> {
     #[doc(hidden)]
-    pub fn into_body_stream<E: StdError + Send + Sync + 'static>(
+    pub fn into_body_stream(
         self,
         marshaller: impl MarshallMessage<Input = T> + Send + Sync + 'static,
         signer: impl SignMessage + Send + Sync + 'static,
-    ) -> MessageStreamAdapter<T, E> {
+    ) -> MessageStreamAdapter<T> {
         MessageStreamAdapter::new(marshaller, signer, self.input_stream)
     }
 }
@@ -99,19 +98,15 @@ impl fmt::Display for MessageStreamError {
 /// This will yield an `Err(SdkError::ConstructionFailure)` if a message can't be
 /// marshalled into an Event Stream frame, (e.g., if the message payload was too large).
 #[pin_project]
-pub struct MessageStreamAdapter<T, E = MessageStreamError> {
+pub struct MessageStreamAdapter<T> {
     marshaller: Box<dyn MarshallMessage<Input = T> + Send + Sync>,
     signer: Box<dyn SignMessage + Send + Sync>,
     #[pin]
     stream: Pin<Box<dyn Stream<Item = Result<T, BoxError>> + Send>>,
     end_signal_sent: bool,
-    _phantom: PhantomData<E>,
 }
 
-impl<T, E> MessageStreamAdapter<T, E>
-where
-    E: StdError + Send + Sync + 'static,
-{
+impl<T> MessageStreamAdapter<T> {
     pub fn new(
         marshaller: impl MarshallMessage<Input = T> + Send + Sync + 'static,
         signer: impl SignMessage + Send + Sync + 'static,
@@ -122,16 +117,12 @@ where
             signer: Box::new(signer),
             stream,
             end_signal_sent: false,
-            _phantom: Default::default(),
         }
     }
 }
 
-impl<T, E> Stream for MessageStreamAdapter<T, E>
-where
-    E: StdError + Send + Sync + 'static,
-{
-    type Item = Result<Bytes, SdkError<E>>;
+impl<T> Stream for MessageStreamAdapter<T> {
+    type Item = Result<Bytes, SdkError<MessageStreamError>>;
 
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
         let this = self.project();

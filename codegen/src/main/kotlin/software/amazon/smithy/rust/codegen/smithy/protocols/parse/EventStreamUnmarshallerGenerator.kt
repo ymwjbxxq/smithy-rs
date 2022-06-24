@@ -36,7 +36,6 @@ import software.amazon.smithy.rust.codegen.smithy.RuntimeType
 import software.amazon.smithy.rust.codegen.smithy.RustSymbolProvider
 import software.amazon.smithy.rust.codegen.smithy.generators.CodegenTarget
 import software.amazon.smithy.rust.codegen.smithy.generators.UnionGenerator
-import software.amazon.smithy.rust.codegen.smithy.generators.error.errorSymbol
 import software.amazon.smithy.rust.codegen.smithy.generators.renderUnknownVariant
 import software.amazon.smithy.rust.codegen.smithy.protocols.Protocol
 import software.amazon.smithy.rust.codegen.smithy.traits.SyntheticEventStreamUnionTrait
@@ -56,12 +55,7 @@ class EventStreamUnmarshallerGenerator(
 ) {
     private val unionSymbol = symbolProvider.toSymbol(unionShape)
     private val smithyEventStream = CargoDependency.SmithyEventStream(runtimeConfig)
-    private val operationErrorSymbol = if (operationShape.errors.isNotEmpty()) {
-        operationShape.errorSymbol(symbolProvider).toSymbol()
-    } else {
-        RuntimeType("MessageStreamError", smithyEventStream, "aws_smithy_http::event_stream")
-            .toSymbol()
-    }
+    private val operationErrorSymbol = RuntimeType("MessageStreamError", smithyEventStream, "aws_smithy_http::event_stream").toSymbol()
     private val eventStreamSerdeModule = RustModule.private("event_stream_serde")
     private val codegenScope = arrayOf(
         "Blob" to RuntimeType("Blob", CargoDependency.SmithyTypes(runtimeConfig), "aws_smithy_types"),

@@ -2,7 +2,6 @@
 [workspace]
 members = [
     "pokemon_service",
-    "pokemon_client",
     "pokemon_service_sdk",
     "pokemon_service_client",
 ]
