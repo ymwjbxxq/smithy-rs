@@ -416,8 +416,7 @@ impl Sync {
             .find_handwritten_files_and_folders(self.aws_sdk_rust.path(), generated_sdk_path)
             .context(here!())?;
         if !handwritten_files_in_generated_sdk_folder.is_empty() {
-            // TODO(https://github.com/awslabs/smithy-rs/issues/1493): This can be changed back to `bail!` after release decoupling is completed
-            warn!(
+            bail!(
                 "found one or more 'handwritten' files/folders in generated code: {:#?}\nhint: if this file is newly generated, remove it from .handwritten",
                 handwritten_files_in_generated_sdk_folder
             );
